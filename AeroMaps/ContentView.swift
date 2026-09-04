@@ -160,7 +160,7 @@ struct MapTabView: View {
 
     @ViewBuilder
     private func content(windowHeight: CGFloat) -> some View {
-        ZStack(alignment: layout.isSidePanel ? .bottomLeading : .bottom) {
+        ZStack(alignment: .bottom) {
             // Main Map View (takes 100% full screen background, zero top blur)
             MapView(mapState: mapState)
                 .ignoresSafeArea()
@@ -283,18 +283,9 @@ struct MapTabView: View {
             }
             .environment(\.planningLayout, layout)
             
-            // The planning surface. On a regular-width window it is a panel beside
-            // the map so the route and the terrain it crosses are visible at once;
-            // on a phone it stays a sheet dragged up over the map.
-            if layout.isSidePanel {
-                HStack(spacing: 0) {
-                    BottomSheet(mapState: mapState, windowHeight: windowHeight)
-                        .frame(width: layout.panelWidth)
-                    Spacer(minLength: 0)
-                }
-            } else {
-                BottomSheet(mapState: mapState, windowHeight: windowHeight)
-            }
+            // The planning surface: the same sheet on every device, sized to the
+            // window rather than stretched across it.
+            BottomSheet(mapState: mapState, windowHeight: windowHeight)
         }
         .sheet(isPresented: $mapState.showingAirportDetail, onDismiss: {
             mapState.selectedAirport = nil

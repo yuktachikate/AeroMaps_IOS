@@ -16,20 +16,14 @@ struct BottomSheet: View {
         PlanningLayout(horizontal: horizontalSizeClass, vertical: verticalSizeClass)
     }
 
-    /// The side panel is always open: there is room for the map beside it, so
-    /// collapsing it would hide the route for no gain.
-    private var isOpen: Bool { layout.isSidePanel || isExpanded }
+    private var isOpen: Bool { isExpanded }
     
-    /// Rounded on whichever edges face the map: the top for a bottom sheet, the
-    /// trailing side for a panel sitting against the leading edge.
+    /// Only the top corners round: the sheet is anchored to the bottom of the
+    /// window, so rounding the bottom would make it read as a floating card.
     private var surfaceShape: UnevenRoundedRectangle {
-        layout.isSidePanel
-            ? UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0,
-                                     bottomTrailingRadius: 24, topTrailingRadius: 24,
-                                     style: .continuous)
-            : UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0,
-                                     bottomTrailingRadius: 0, topTrailingRadius: 24,
-                                     style: .continuous)
+        UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0,
+                               bottomTrailingRadius: 0, topTrailingRadius: 24,
+                               style: .continuous)
     }
 
     /// Route tools need two points. Saying so beats a row of dimmed buttons with no
@@ -67,8 +61,6 @@ struct BottomSheet: View {
     
     var body: some View {
         VStack(spacing: 10) {
-            // Drag handle, omitted on the side panel, which does not collapse.
-            if !layout.isSidePanel {
             Button(action: {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     isExpanded.toggle()
@@ -78,7 +70,6 @@ struct BottomSheet: View {
                     .fill(Color.white.opacity(0.6))
                     .frame(width: 40, height: 5)
                     .padding(.top, 8)
-            }
             }
             
             // 1. Search Bar (At top of bottom sheet, like Apple Maps)
@@ -232,9 +223,8 @@ struct BottomSheet: View {
             }
         }
         .frame(maxWidth: layout.panelWidth ?? .infinity,
-               maxHeight: layout.isSidePanel ? .infinity
-                   : (isExpanded ? layout.expandedHeight(in: windowHeight) : nil),
-               alignment: layout.isSidePanel ? .top : .bottom)
+               maxHeight: isExpanded ? layout.expandedHeight(in: windowHeight) : nil,
+               alignment: .bottom)
         .padding(.bottom, isOpen ? 0 : 20)
         // Background drawn as its own layer that ignores the bottom safe area.
         //
@@ -247,12 +237,12 @@ struct BottomSheet: View {
         // Only the top corners should be round.
         .background(
             AeroSurfaceFill(role: .panel, shape: surfaceShape)
-                .ignoresSafeArea(edges: layout.isSidePanel ? [.bottom, .top] : .bottom)
+                .ignoresSafeArea(edges: .bottom)
         )
+
         .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: -5)
-        // The panel does not drag; only the sheet does.
         .gesture(
-            layout.isSidePanel ? nil : DragGesture(minimumDistance: 15)
+            DragGesture(minimumDistance: 15)
                 .onEnded { value in
                     if value.translation.height < -20 {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -266,7 +256,7 @@ struct BottomSheet: View {
                     }
                 }
         )
-        .ignoresSafeArea(edges: layout.isSidePanel ? [] : .bottom)
+        .ignoresSafeArea(edges: .bottom)
         .onChange(of: mapState.searchText) { newValue in
             mapState.performLiveAirportSearch(query: newValue)
         }
