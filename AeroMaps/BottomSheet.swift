@@ -18,11 +18,16 @@ struct BottomSheet: View {
 
     private var isOpen: Bool { isExpanded }
     
-    /// Only the top corners round: the sheet is anchored to the bottom of the
-    /// window, so rounding the bottom would make it read as a floating card.
+    /// Matches the search bar's radius, so the sheet and the first control inside
+    /// it agree. Only the top corners round: the sheet is anchored to the bottom of
+    /// the window, so rounding the bottom would make it read as a floating card.
+    private static let cornerRadius: CGFloat = 16
+
     private var surfaceShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0,
-                               bottomTrailingRadius: 0, topTrailingRadius: 24,
+        UnevenRoundedRectangle(topLeadingRadius: Self.cornerRadius,
+                               bottomLeadingRadius: 0,
+                               bottomTrailingRadius: 0,
+                               topTrailingRadius: Self.cornerRadius,
                                style: .continuous)
     }
 
