@@ -97,22 +97,30 @@ final class WaypointSearchModel: ObservableObject {
             return
         }
 
-        // Immediate, offline matches first.
+        // A typed coordinate resolves instantly — it is pure parsing, no scan.
         var immediate: [WaypointSuggestion] = []
         if let coord = CoordinateParser.parse(trimmed) {
             immediate.append(.coordinate(coord))
         }
-        immediate.append(contentsOf: matchingAirports(trimmed, airports: airports, live: liveResults)
-            .prefix(8).map(WaypointSuggestion.airport))
-        suggestions = immediate
+        // The airport scan is debounced with the place search rather than run on
+        // every keystroke. Scanning ~29,000 records per character was enough to
+        // make typing an ident stutter.
+        suggestions = immediate + suggestions.filter {
+            if case .airport = $0 { return true } else { return false }
+        }
         isSearching = true
 
         // Places lag behind a short debounce so typing does not fire a request per key.
         let work = DispatchWorkItem { [weak self] in
-            self?.runPlaceSearch(trimmed, region: region, keeping: immediate)
+            guard let self else { return }
+            let airportHits = self.matchingAirports(trimmed, airports: airports, live: liveResults)
+                .prefix(8).map(WaypointSuggestion.airport)
+            let base = immediate + airportHits
+            self.suggestions = base
+            self.runPlaceSearch(trimmed, region: region, keeping: base)
         }
         pendingWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: work)
     }
 
     private func matchingAirports(_ query: String, airports: AirportCatalog, live: [Airport]) -> [Airport] {
