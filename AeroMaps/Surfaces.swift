@@ -95,6 +95,30 @@ struct AeroSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
+/// A surface drawn as a standalone shape rather than wrapped around content.
+///
+/// Needed for the bottom sheet, whose background must extend past the home
+/// indicator while its content stays inside the safe area. `.background(_:in:)`
+/// sizes the shape to the view's layout bounds, so it does not reliably reach into
+/// an ignored safe area — which left a strip of map visible under the sheet.
+struct AeroSurfaceFill<S: Shape>: View {
+    let role: SurfaceRole
+    let shape: S
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @AppStorage(HighContrast.key) private var highContrast = false
+
+    var body: some View {
+        if reduceTransparency || highContrast {
+            shape.fill(Color(white: 0.10))
+        } else if role == .panel {
+            shape.fill(.thickMaterial)
+        } else {
+            shape.fill(.ultraThinMaterial)
+        }
+    }
+}
+
 extension View {
     /// Standard app surface. Prefer this over a bare `.background(.ultraThinMaterial)`.
     func aeroSurface<S: InsettableShape>(_ role: SurfaceRole,

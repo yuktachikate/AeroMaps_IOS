@@ -2502,6 +2502,23 @@ struct FloatingActionButtons: View {
     
     var body: some View {
         VStack(spacing: 12) {
+            // Zoom controls, grouped into one pill so they read as a pair rather
+            // than two unrelated buttons. Pinch is awkward on a trackpad and worse
+            // one-handed in a cockpit.
+            VStack(spacing: 0) {
+                MapZoomButton(icon: "plus") { mapState.zoomCamera(by: 0.5) }
+                Rectangle()
+                    .fill(Color.white.opacity(0.18))
+                    .frame(width: 24, height: 1)
+                MapZoomButton(icon: "minus") { mapState.zoomCamera(by: 2.0) }
+            }
+            .aeroSurface(.floating, cornerRadius: 24)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
+
             // Locate Button (Go to Current Location)
             FloatingButton(
                 icon: "location.fill",
@@ -2519,6 +2536,24 @@ struct FloatingActionButtons: View {
                 }
             )
         }
+    }
+}
+
+/// A zoom step. Deliberately without its own background: these sit inside a shared
+/// pill, so a per-button circle would fight the container.
+struct MapZoomButton: View {
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.title3).fontWeight(.semibold)
+                .foregroundColor(.white)
+                .frame(width: 50, height: 46)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

@@ -209,11 +209,25 @@ struct BottomSheet: View {
         }
         .frame(maxWidth: isLandscape ? 500 : .infinity, maxHeight: isExpanded ? (isLandscape ? 240 : UIScreen.main.bounds.height * 0.80) : nil, alignment: .bottom)
         .padding(.bottom, isExpanded ? 0 : (isLandscape ? 8 : 20))
-        // A panel, not floating chrome: the altitudes and fuel figures on it are
-        // read and acted on, so it stays substantially more opaque than the map
-        // chrome and goes fully solid in sunlight mode.
-        .aeroSurface(.panel, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        // Background drawn as its own layer that ignores the bottom safe area.
+        //
+        // Two bugs lived in the previous version. `.background(_:in:)` sizes its
+        // shape to the view's layout bounds, so it did not reliably fill the region
+        // opened up by `.ignoresSafeArea` — leaving a strip of map visible beneath
+        // the sheet on some SDKs. And clipping to a plain RoundedRectangle rounded
+        // all four corners, so where that strip appeared the sheet read as a
+        // floating card rather than something anchored to the bottom of the screen.
+        // Only the top corners should be round.
+        .background(
+            AeroSurfaceFill(
+                role: .panel,
+                shape: UnevenRoundedRectangle(topLeadingRadius: 24,
+                                              bottomLeadingRadius: 0,
+                                              bottomTrailingRadius: 0,
+                                              topTrailingRadius: 24,
+                                              style: .continuous))
+                .ignoresSafeArea(edges: .bottom)
+        )
         .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: -5)
         .gesture(
             DragGesture(minimumDistance: 15)

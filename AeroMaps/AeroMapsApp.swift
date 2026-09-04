@@ -1067,6 +1067,25 @@ final class MapState: ObservableObject {
         searchText = ""
     }
     
+    /// Steps the map camera in or out.
+    ///
+    /// Pinch is awkward on a simulator trackpad and worse in a cockpit — one hand
+    /// on the yoke, gloves on, turbulence — so the map gets the same explicit
+    /// controls the route preview has.
+    func zoomCamera(by factor: Double) {
+        let current = camera.centerCoordinateDistance
+        // Floor and ceiling keep a stray double-tap from ending up at street level
+        // or in orbit.
+        let target = min(max(current * factor, 800), 20_000_000)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            camera = MKMapCamera(lookingAtCenter: camera.centerCoordinate,
+                                 fromDistance: target,
+                                 pitch: camera.pitch,
+                                 heading: camera.heading)
+            shouldCenterCamera = true
+        }
+    }
+
     func zoomToRoute() {
         guard route.waypoints.count >= 1 else { return }
         
