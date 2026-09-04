@@ -1,0 +1,104 @@
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# ---------------------------------------------------------------------------
+# Xcode
+# ---------------------------------------------------------------------------
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+
+# Per-developer Xcode state: schemes, breakpoints, window layout. Committing it
+# means two people fight over each other's editor settings on every pull.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods / Carthage, should either ever be added
+Pods/
+Carthage/Build/
+
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+# API credentials resolve from build settings into Info.plist at compile time.
+# Put real values in Secrets.xcconfig, which never leaves your machine.
+# See README → "API credentials".
+Secrets.xcconfig
+*.local.xcconfig
+.env
+.env.*
+!.env.example
+*.p12
+*.pem
+*.mobileprovision
+*.cer
+
+# ---------------------------------------------------------------------------
+# Python backend
+# ---------------------------------------------------------------------------
+backend/venv/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+*.sqlite3
+traces.db
+
+# ---------------------------------------------------------------------------
+# Node frontend
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# Large media
+# ---------------------------------------------------------------------------
+# Demo recordings are tens of megabytes and change constantly; share them
+# somewhere other than git history.
+*.mov
+*.mp4
+*.gif
+
+# ---------------------------------------------------------------------------
+# Tooling scratch
+# ---------------------------------------------------------------------------
+.remember/
+*.log

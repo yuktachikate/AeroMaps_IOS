@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+flake8
+pytest
+black
+openai
+requests
+python-dotenv
+contextlib2
+anyio
+starlette
+typing-extensions

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(xcodebuild -list -project AeroMaps.xcodeproj)",
+      "Bash(xcodebuild -version)",
+      "Bash(xargs ls -t)"
+    ]
+  }
+}

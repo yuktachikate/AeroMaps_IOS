@@ -1,0 +1,16 @@
+{
+  "polyline": [
+    {"lat": 37.6213, "lon": -122.3790},
+    {"lat": 37.3639, "lon": -121.9289}
+  ],
+  "legRisks": [
+    {"fromIndex": 0, "toIndex": 1, "icing": 0.2, "turbulence": 0.4, "terrain": 0.1}
+  ],
+  "alternates": ["KOAK", "KSQL"],
+  "advisory": "Moderate turbulence forecast along the route. Consider lower altitude after SUU.",
+  "riskTileTemplates": [
+    "https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=demo"
+  ]
+}
+
+
