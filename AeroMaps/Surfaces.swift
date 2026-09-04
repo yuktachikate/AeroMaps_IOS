@@ -39,15 +39,51 @@ struct AeroSurface<S: InsettableShape>: ViewModifier {
             content
                 .background(opaqueFill, in: shape)
                 .overlay(shape.stroke(Color.white.opacity(0.35), lineWidth: 1))
-        } else if role == .floating, #available(iOS 26.0, *) {
-            // Liquid Glass, where it belongs: floating chrome.
-            content
-                .glassEffect(tint.map { .regular.tint($0) } ?? .regular, in: shape)
+        } else if role == .floating, isGlassAvailable {
+            glassContent(content)
         } else {
             content
                 .background(role == .panel ? panelMaterial : .ultraThinMaterial, in: shape)
                 .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 1))
         }
+    }
+
+    /// Liquid Glass is guarded at *compile* time, not just at runtime.
+    ///
+    /// `#available` alone is not enough: it decides whether to call an API, but the
+    /// symbol still has to exist in the SDK being compiled against. `glassEffect`
+    /// and `Glass.regular` ship in the iOS 26 SDK, so on Xcode 16 the file fails to
+    /// build with "no member 'glassEffect'" long before any runtime check runs.
+    /// `#if compiler(>=6.2)` admits Xcode 26 and later, which is exactly where those
+    /// symbols exist; older Xcode compiles the material path instead and the app
+    /// looks and behaves the same, minus the refraction.
+    @ViewBuilder
+    private func glassContent(_ content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(tint.map { .regular.tint($0) } ?? .regular, in: shape)
+        } else {
+            materialFallback(content)
+        }
+        #else
+        materialFallback(content)
+        #endif
+    }
+
+    private var isGlassAvailable: Bool {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { return true }
+        return false
+        #else
+        return false
+        #endif
+    }
+
+    @ViewBuilder
+    private func materialFallback(_ content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: shape)
+            .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 1))
     }
 
     /// Panels get the densest material available, not the thinnest. A route list

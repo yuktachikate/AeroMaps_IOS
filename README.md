@@ -48,8 +48,13 @@ the ground stays readable in the air.
 
 ## Building
 
-**Requirements:** Xcode 26 or later (the iOS 26 SDK, for the Liquid Glass APIs).
-Deployment target is iOS 17, so the app runs on iOS 17 and later.
+**Requirements:** Xcode 16 or later. Deployment target is iOS 17, so the app runs
+on iOS 17 and later.
+
+Xcode 26+ additionally compiles the Liquid Glass surfaces; on older Xcode those
+fall back to standard materials via a `#if compiler(>=6.2)` guard, and the app
+looks and behaves the same minus the refraction. Nothing else in the project needs
+a recent SDK.
 
 ```bash
 git clone git@github.com:yuktachikate/AeroMaps_IOS.git
