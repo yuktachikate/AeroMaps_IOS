@@ -41,12 +41,15 @@ rather than being filled in — see [Data honesty](#data-honesty).
 | Controlled airspace | [FAA AIS](https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer) | Published Class B/C/D/E. **US only.** Rate limited |
 | Terrain elevation | [Open-Meteo](https://open-meteo.com/) | No key |
 | Live traffic | [OpenSky Network](https://openskynetwork.github.io/opensky-api/) | Anonymous: 400 credits/day **per device** |
-| NOTAMs | [FAA NOTAM API](https://external-api.faa.gov/notamapi/v1/) | **Requires credentials** — see below |
+| NOTAMs | — | **Not included.** No free, open NOTAM API exists; the FAA's is approval-gated. See [API credentials](#api-credentials) |
 
 Everything fetched is cached to disk with its age recorded, so a briefing taken on
 the ground stays readable in the air.
 
-## Getting started
+## Building
+
+**Requirements:** Xcode 26 or later (the iOS 26 SDK, for the Liquid Glass APIs).
+Deployment target is iOS 17, so the app runs on iOS 17 and later.
 
 ```bash
 git clone git@github.com:yuktachikate/AeroMaps_IOS.git
@@ -54,17 +57,78 @@ cd AeroMaps_IOS
 open AeroMaps.xcodeproj
 ```
 
-Build and run. No package manager, no dependencies, no signing setup beyond your
-own team. The airport database ships in the repo, so it works on first launch with
-no network.
+There is one target and one scheme, both named **AeroMaps**. No package manager, no
+dependencies to resolve, nothing to install.
 
-**Requirements:** Xcode 26+ (iOS 26 SDK for the Liquid Glass APIs), deployment
-target iOS 17.
+### In Xcode
+
+1. Select the **AeroMaps** scheme and any iOS simulator.
+2. **⌘R**.
+
+That is the whole loop for simulator work — no signing needed.
+
+**To run on a device**, set your own signing first. The project ships with an empty
+team and a placeholder bundle identifier, so you must set both:
+
+1. Select the project → **AeroMaps** target → **Signing & Capabilities**.
+2. Set **Team** to your own Apple developer team.
+3. Change **Bundle Identifier** from `com.example.AeroMaps` to something unique to
+   you, e.g. `com.yourname.AeroMaps` — two people cannot install the same
+   identifier on the same device.
+
+Do not commit either change: keep them local, or set them in an untracked
+`Secrets.xcconfig` alongside the API credentials below.
+
+### From the command line
+
+Useful for CI, or when Xcode is installed somewhere non-standard (a beta, say):
+
+```bash
+# If your Xcode is not the one xcode-select points at:
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+
+xcodebuild -project AeroMaps.xcodeproj -scheme AeroMaps -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Install and launch on a booted simulator:
+
+```bash
+xcrun simctl install booted <DerivedData>/Build/Products/Debug-iphonesimulator/AeroMaps.app
+xcrun simctl launch booted com.example.AeroMaps
+```
+
+### First run
+
+- The app asks for **location** once, to show your position and the airports near
+  you. It works without it, anchoring on the map view instead.
+- The airport database is bundled, so the map and route planning work **with no
+  network at all**. Weather, traffic and airspace need a connection and degrade to
+  cached-or-absent without one, always labelled with their age.
+- To see the local-flying features, set a simulator location:
+  **Features → Location → Custom Location** (Palo Alto is `37.4611, -122.1150`).
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| "Signing requires a development team" | Set your team and bundle ID as above, or build for a simulator with `CODE_SIGNING_ALLOWED=NO` |
+| `xcodebuild: command not found`, or the wrong Xcode | `export DEVELOPER_DIR=...` as above, or `sudo xcode-select -s /Applications/Xcode.app` |
+| No airspace on the map | US only, and the FAA service is rate limited — it backs off 70 s after a rejection and retries |
+| No weather | Needs a network; fields without reporting equipment genuinely have none |
+| Empty traffic, or an orange "Simulated traffic" badge | OpenSky unreachable or the daily anonymous quota is spent |
 
 ### API credentials
 
-Only NOTAMs need credentials; everything else is keyless. Without them the app
-reports NOTAMs as unavailable and never fabricates any.
+**NOTAMs are not shipped.** There is no free, open NOTAM API — the FAA's is
+approval-gated, the public search is bot-blocked, and every third-party source is
+either paid or licensed against redistribution. The client is written and tested;
+supply credentials and it activates, including the map layer, which stays hidden
+until then.
+
+Check Route still reports the omission, so nobody assumes the preflight check
+covered NOTAMs. Everything else in the app is keyless.
 
 1. Register at the [FAA API portal](https://portal.apic4e.faa.gov/) and request
    access to the NOTAM API (approval-based, free).
@@ -133,7 +197,8 @@ planning aid and a hazard.
 
 ## Known gaps
 
-- **NOTAMs** need FAA credentials; there is no free, open NOTAM API.
+- **NOTAMs are not included.** The client exists but has no reachable free source;
+  the layer is hidden and Check Route discloses the gap.
 - **Airspace is US-only** — no free worldwide source exists (openAIP is gated and
   non-commercial).
 - **Approach plates** are not included; the Airport Diagram is drawn from runway

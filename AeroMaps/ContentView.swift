@@ -2409,7 +2409,13 @@ struct LayerControls: View {
                     .frame(width: 1, height: 22)
                     .padding(.horizontal, 2)
 
-                ForEach(LayerKind.allCases) { layer in
+                // NOTAMs are hidden while no credentials are configured: a toggle
+                // that can only ever show an empty layer is worse than no toggle.
+                // The omission is still disclosed in Check Route, so nobody assumes
+                // the preflight check covered them.
+                ForEach(LayerKind.allCases.filter {
+                    $0 != .notams || mapState.notams.isConfigured
+                }) { layer in
                     LayerButton(
                         layer: layer,
                         isActive: mapState.activeLayers.contains(layer),

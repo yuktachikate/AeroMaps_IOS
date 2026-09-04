@@ -592,8 +592,10 @@ enum RouteValidator {
                                         : "The FAA reports no active NOTAMs for these fields (\(freshness.shortLabel)).",
                                     fix: nil))
         case .notConfigured:
-            findings.append(Finding(severity: .advisory, title: "NOTAMs not available",
-                                    detail: "FAA NOTAM credentials are not configured, so no NOTAMs could be checked. Obtain them before relying on this app for NOTAM information.",
+            // Kept deliberately, even though the layer is hidden. Silently skipping
+            // NOTAMs would let a pilot assume this check covered them.
+            findings.append(Finding(severity: .advisory, title: "NOTAMs not checked",
+                                    detail: "This app does not include NOTAMs. Obtain them separately from an official briefing before flight — a runway closure or obstruction will not appear here.",
                                     fix: nil))
         case .failed(let message):
             findings.append(Finding(severity: .caution, title: "NOTAMs could not be checked",
