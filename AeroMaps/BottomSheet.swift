@@ -3,13 +3,35 @@ import MapKit
 
 struct BottomSheet: View {
     @ObservedObject var mapState: MapState
+    /// The window's height, measured by the host rather than taken from
+    /// UIScreen — under Split View or Stage Manager the app's window is not the
+    /// screen, and UIScreen.main is deprecated for exactly that reason.
+    var windowHeight: CGFloat = 800
+
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isExpanded = false
-    
-    var isLandscape: Bool {
-        verticalSizeClass == .compact
+
+    private var layout: PlanningLayout {
+        PlanningLayout(horizontal: horizontalSizeClass, vertical: verticalSizeClass)
     }
+
+    /// The side panel is always open: there is room for the map beside it, so
+    /// collapsing it would hide the route for no gain.
+    private var isOpen: Bool { layout.isSidePanel || isExpanded }
     
+    /// Rounded on whichever edges face the map: the top for a bottom sheet, the
+    /// trailing side for a panel sitting against the leading edge.
+    private var surfaceShape: UnevenRoundedRectangle {
+        layout.isSidePanel
+            ? UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0,
+                                     bottomTrailingRadius: 24, topTrailingRadius: 24,
+                                     style: .continuous)
+            : UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 0,
+                                     bottomTrailingRadius: 0, topTrailingRadius: 24,
+                                     style: .continuous)
+    }
+
     /// Route tools need two points. Saying so beats a row of dimmed buttons with no
     /// explanation — which is exactly how it read before.
     private var needsDestinationHint: some View {
@@ -45,7 +67,8 @@ struct BottomSheet: View {
     
     var body: some View {
         VStack(spacing: 10) {
-            // Drag Handle
+            // Drag handle, omitted on the side panel, which does not collapse.
+            if !layout.isSidePanel {
             Button(action: {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     isExpanded.toggle()
@@ -55,6 +78,7 @@ struct BottomSheet: View {
                     .fill(Color.white.opacity(0.6))
                     .frame(width: 40, height: 5)
                     .padding(.top, 8)
+            }
             }
             
             // 1. Search Bar (At top of bottom sheet, like Apple Maps)
@@ -158,12 +182,12 @@ struct BottomSheet: View {
             // 2. Layer Control Pallets (Traffic, Radar, Airspace, FFM Risk)
             LayerControls(mapState: mapState)
                 .padding(.horizontal, 14)
-                .padding(.bottom, isExpanded ? 0 : (isLandscape ? 12 : 24))
+                .padding(.bottom, isOpen ? 0 : 24)
             
             // 3. The planning surface, in the order a route is actually worked:
             //    build it → refine and check it → see what it costs → set up the
             //    aircraft → reach for the secondary tools.
-            if isExpanded {
+            if isOpen {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 14) {
                         Divider()
@@ -207,8 +231,11 @@ struct BottomSheet: View {
                 }
             }
         }
-        .frame(maxWidth: isLandscape ? 500 : .infinity, maxHeight: isExpanded ? (isLandscape ? 240 : UIScreen.main.bounds.height * 0.80) : nil, alignment: .bottom)
-        .padding(.bottom, isExpanded ? 0 : (isLandscape ? 8 : 20))
+        .frame(maxWidth: layout.panelWidth ?? .infinity,
+               maxHeight: layout.isSidePanel ? .infinity
+                   : (isExpanded ? layout.expandedHeight(in: windowHeight) : nil),
+               alignment: layout.isSidePanel ? .top : .bottom)
+        .padding(.bottom, isOpen ? 0 : 20)
         // Background drawn as its own layer that ignores the bottom safe area.
         //
         // Two bugs lived in the previous version. `.background(_:in:)` sizes its
@@ -219,18 +246,13 @@ struct BottomSheet: View {
         // floating card rather than something anchored to the bottom of the screen.
         // Only the top corners should be round.
         .background(
-            AeroSurfaceFill(
-                role: .panel,
-                shape: UnevenRoundedRectangle(topLeadingRadius: 24,
-                                              bottomLeadingRadius: 0,
-                                              bottomTrailingRadius: 0,
-                                              topTrailingRadius: 24,
-                                              style: .continuous))
-                .ignoresSafeArea(edges: .bottom)
+            AeroSurfaceFill(role: .panel, shape: surfaceShape)
+                .ignoresSafeArea(edges: layout.isSidePanel ? [.bottom, .top] : .bottom)
         )
         .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: -5)
+        // The panel does not drag; only the sheet does.
         .gesture(
-            DragGesture(minimumDistance: 15)
+            layout.isSidePanel ? nil : DragGesture(minimumDistance: 15)
                 .onEnded { value in
                     if value.translation.height < -20 {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -244,7 +266,7 @@ struct BottomSheet: View {
                     }
                 }
         )
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(edges: layout.isSidePanel ? [] : .bottom)
         .onChange(of: mapState.searchText) { newValue in
             mapState.performLiveAirportSearch(query: newValue)
         }

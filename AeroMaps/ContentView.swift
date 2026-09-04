@@ -146,13 +146,21 @@ struct MapTabView: View {
     @EnvironmentObject var weatherService: WeatherService
     @EnvironmentObject var liveFlightService: LiveFlightService
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    
-    var isLandscape: Bool {
-        verticalSizeClass == .compact
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var layout: PlanningLayout {
+        PlanningLayout(horizontal: horizontalSizeClass, vertical: verticalSizeClass)
     }
-    
+
     var body: some View {
-        ZStack(alignment: .bottom) {
+        GeometryReader { geo in
+            content(windowHeight: geo.size.height)
+        }
+    }
+
+    @ViewBuilder
+    private func content(windowHeight: CGFloat) -> some View {
+        ZStack(alignment: layout.isSidePanel ? .bottomLeading : .bottom) {
             // Main Map View (takes 100% full screen background, zero top blur)
             MapView(mapState: mapState)
                 .ignoresSafeArea()
@@ -235,7 +243,7 @@ struct MapTabView: View {
                         Spacer()
                     }
                     .padding(.leading, 16)
-                    .padding(.bottom, isLandscape ? 60 : 170)
+                    .padding(.bottom, layout.mapControlBottomInset)
                 }
             }
 
@@ -270,12 +278,23 @@ struct MapTabView: View {
                     Spacer()
                     FloatingActionButtons(mapState: mapState)
                         .padding(.trailing, 16)
-                        .padding(.bottom, isLandscape ? 60 : 160)
+                        .padding(.bottom, layout.mapControlBottomInset)
                 }
             }
+            .environment(\.planningLayout, layout)
             
-            // Bottom Sheet (houses Search Bar, Layer Pallets, and Route Options)
-            BottomSheet(mapState: mapState)
+            // The planning surface. On a regular-width window it is a panel beside
+            // the map so the route and the terrain it crosses are visible at once;
+            // on a phone it stays a sheet dragged up over the map.
+            if layout.isSidePanel {
+                HStack(spacing: 0) {
+                    BottomSheet(mapState: mapState, windowHeight: windowHeight)
+                        .frame(width: layout.panelWidth)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                BottomSheet(mapState: mapState, windowHeight: windowHeight)
+            }
         }
         .sheet(isPresented: $mapState.showingAirportDetail, onDismiss: {
             mapState.selectedAirport = nil

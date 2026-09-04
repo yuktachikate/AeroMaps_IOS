@@ -8,37 +8,38 @@
 
 /* Begin PBXBuildFile section */
 		05B384ECAF320D89CCE165EC /* AirportDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2D9D9DD13956B360E926F3 /* AirportDetailView.swift */; };
-		24E071CB77CA1D856640B9B6 /* AeroMapsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 202FD58F1EC33DD3BD56793E /* AeroMapsApp.swift */; };
-		2DEB635E70606F7444D2D66A /* BottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4484B5196BF79F13362354 /* BottomSheet.swift */; };
-		31CFE9F87337B8613E098708 /* WeatherPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80BCC16129EFDF294CD6D88 /* WeatherPanelView.swift */; };
-		3A5D17DE3485CFBC6DDB410E /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 139233AEF1BFEC0BDD204E63 /* Preview Assets.xcassets */; };
-		5906EF4D0BAFB27E8C8BC46F /* FlightPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD5A00200E45AB99729FC8D8 /* FlightPlannerView.swift */; };
-		C6018A9A8850BFA3608F6E67 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D00E5DAB1D383FD896F62 /* ContentView.swift */; };
-		8552B555AFE505B5361AB3EA /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7533A1AEDD281386A6CE1B8 /* Surfaces.swift */; };
-		C5FD65D9B436A67BA35042F7 /* AeronauticalDataUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C54F07B3CECFD01A2AF394 /* AeronauticalDataUpdater.swift */; };
-		A14E3D2033C563B02F87690A /* AircraftEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C52D8A5A310C9E26D23893B /* AircraftEditorView.swift */; };
-		7DB5C1BD2DF0A68EBC765CFF /* NotamService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372E3FF27E1C02E601934B84 /* NotamService.swift */; };
+		10425FDF6049AFAA9F5BE89D /* RouteProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D7B40D18D2175305EBD71F /* RouteProfileView.swift */; };
 		110866A223784A5B683E96B0 /* AirspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC11075DC3A6F395FBCAB86 /* AirspaceService.swift */; };
-		E91A64C95C8FAE052CC496B6 /* AviationWeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58BA0CD5F43A05C72CE32321 /* AviationWeatherService.swift */; };
-		CCD723CEBA33B5E106CBCFB6 /* DataCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B61974074A794226CA30ED /* DataCache.swift */; };
+		24E071CB77CA1D856640B9B6 /* AeroMapsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 202FD58F1EC33DD3BD56793E /* AeroMapsApp.swift */; };
+		25599B4B10E48469EC8D7B7F /* TerrainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5B134A161727D9ADB4C326F /* TerrainService.swift */; };
+		2DEB635E70606F7444D2D66A /* BottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4484B5196BF79F13362354 /* BottomSheet.swift */; };
+		30445CA2A70AC0350F26BF13 /* AirportToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40CBF6AAE29822BCFC1266 /* AirportToolsView.swift */; };
+		31CFE9F87337B8613E098708 /* WeatherPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80BCC16129EFDF294CD6D88 /* WeatherPanelView.swift */; };
+		323C9029BAA2301882489B25 /* RouteBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD286056AB2513C1B78B3E0 /* RouteBuilderView.swift */; };
 		34FFB9895A1F417BE70ACEE5 /* NearbyAirportsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935DB6D7808E8CF932FD0A4B /* NearbyAirportsView.swift */; };
-		62F6FBF97536A3C6074757B7 /* AeronauticalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1EAA80A58C797660D363C96 /* AeronauticalData.swift */; };
-		6B4DB8AA45FF5EC9261A2009 /* RoutePreviewMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21C73248A0D0085B13A4FED4 /* RoutePreviewMap.swift */; };
+		3A5D17DE3485CFBC6DDB410E /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 139233AEF1BFEC0BDD204E63 /* Preview Assets.xcassets */; };
 		44764363BAF3EB510912CACE /* RouteAdvisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8B6F69549F807083D19A1D0 /* RouteAdvisor.swift */; };
-		D4BAF14A8BA7D676C9973229 /* RouteAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A41792A5EE0FBE37F49015 /* RouteAssistantView.swift */; };
+		5906EF4D0BAFB27E8C8BC46F /* FlightPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD5A00200E45AB99729FC8D8 /* FlightPlannerView.swift */; };
+		62F6FBF97536A3C6074757B7 /* AeronauticalData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1EAA80A58C797660D363C96 /* AeronauticalData.swift */; };
 		63533891466CC88FA2C11AD6 /* RouteAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BD20E056F7E0A36A519853 /* RouteAssistant.swift */; };
 		69C744FDD972B9B7BEDDDD92 /* Aircraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FAD97E097B106751EA85960 /* Aircraft.swift */; };
-		30445CA2A70AC0350F26BF13 /* AirportToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40CBF6AAE29822BCFC1266 /* AirportToolsView.swift */; };
-		CADA1BD93282CAE6BB1C8A57 /* ProcedureAdvisorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A711F365F25B6067C0B56BD9 /* ProcedureAdvisorView.swift */; };
-		10425FDF6049AFAA9F5BE89D /* RouteProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D7B40D18D2175305EBD71F /* RouteProfileView.swift */; };
-		323C9029BAA2301882489B25 /* RouteBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD286056AB2513C1B78B3E0 /* RouteBuilderView.swift */; };
-		25599B4B10E48469EC8D7B7F /* TerrainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5B134A161727D9ADB4C326F /* TerrainService.swift */; };
+		6B4DB8AA45FF5EC9261A2009 /* RoutePreviewMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21C73248A0D0085B13A4FED4 /* RoutePreviewMap.swift */; };
 		6EBE198B9782CE9D8F8B8D78 /* AltitudeProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4EC1161092C83629F8B9792 /* AltitudeProfile.swift */; };
+		7DB5C1BD2DF0A68EBC765CFF /* NotamService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372E3FF27E1C02E601934B84 /* NotamService.swift */; };
+		8552B555AFE505B5361AB3EA /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7533A1AEDD281386A6CE1B8 /* Surfaces.swift */; };
+		A14E3D2033C563B02F87690A /* AircraftEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C52D8A5A310C9E26D23893B /* AircraftEditorView.swift */; };
 		B3D45DE6D602D09825C3E54B /* Waypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBE7546616CB4288989F044 /* Waypoint.swift */; };
+		C5FD65D9B436A67BA35042F7 /* AeronauticalDataUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C54F07B3CECFD01A2AF394 /* AeronauticalDataUpdater.swift */; };
+		C6018A9A8850BFA3608F6E67 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D00E5DAB1D383FD896F62 /* ContentView.swift */; };
+		D146ABC9AA20DBE7B05990CC /* Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB7CB8EB8DFEDEF0470DAD99 /* Layout.swift */; };
 		C69254CCA6CFFCEBEFECE08A /* MapSymbols.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173477FF8DF51BEE10C22810 /* MapSymbols.swift */; };
+		CADA1BD93282CAE6BB1C8A57 /* ProcedureAdvisorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A711F365F25B6067C0B56BD9 /* ProcedureAdvisorView.swift */; };
+		CCD723CEBA33B5E106CBCFB6 /* DataCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B61974074A794226CA30ED /* DataCache.swift */; };
 		D293C76F34C59A21284CED41 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F1D76B78AB11E51854EB1909 /* Assets.xcassets */; };
-		F0FF0FF1AA11BB22CC33DD44 /* FFMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0FF0FF0AA11BB22CC33DD44 /* FFMClient.swift */; };
+		D4BAF14A8BA7D676C9973229 /* RouteAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11A41792A5EE0FBE37F49015 /* RouteAssistantView.swift */; };
+		E91A64C95C8FAE052CC496B6 /* AviationWeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58BA0CD5F43A05C72CE32321 /* AviationWeatherService.swift */; };
 		EBBA76F80BBA04E9C19D1075 /* aerodata.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FD007B5B46423ED8315057A /* aerodata.json */; };
+		F0FF0FF1AA11BB22CC33DD44 /* FFMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0FF0FF0AA11BB22CC33DD44 /* FFMClient.swift */; };
 		F0FF0FF3AA11BB22CC33DD44 /* ffm_mock_response.json in Resources */ = {isa = PBXBuildFile; fileRef = F0FF0FF2AA11BB22CC33DD44 /* ffm_mock_response.json */; };
 		F0FF0FF4AA11BB22CC33DD44 /* LiveFlightService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0FF0FF5AA11BB22CC33DD44 /* LiveFlightService.swift */; };
 		F0FF0FF6AA11BB22CC33DD44 /* PromptTreeTracer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0FF0FF7AA11BB22CC33DD44 /* PromptTreeTracer.swift */; };
@@ -47,43 +48,44 @@
 
 /* Begin PBXFileReference section */
 		0A2D9D9DD13956B360E926F3 /* AirportDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirportDetailView.swift; sourceTree = "<group>"; };
+		11A41792A5EE0FBE37F49015 /* RouteAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteAssistantView.swift; sourceTree = "<group>"; };
 		139233AEF1BFEC0BDD204E63 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		173477FF8DF51BEE10C22810 /* MapSymbols.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapSymbols.swift; sourceTree = "<group>"; };
 		1A9259E143A9B474520894CF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1DF639AE82F39AFE8391C061 /* AeroMaps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AeroMaps.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		202FD58F1EC33DD3BD56793E /* AeroMapsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AeroMapsApp.swift; sourceTree = "<group>"; };
-		471D00E5DAB1D383FD896F62 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A7533A1AEDD281386A6CE1B8 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
-		68C54F07B3CECFD01A2AF394 /* AeronauticalDataUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AeronauticalDataUpdater.swift; sourceTree = "<group>"; };
-		5C52D8A5A310C9E26D23893B /* AircraftEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftEditorView.swift; sourceTree = "<group>"; };
-		372E3FF27E1C02E601934B84 /* NotamService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotamService.swift; sourceTree = "<group>"; };
-		AEC11075DC3A6F395FBCAB86 /* AirspaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirspaceService.swift; sourceTree = "<group>"; };
-		58BA0CD5F43A05C72CE32321 /* AviationWeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AviationWeatherService.swift; sourceTree = "<group>"; };
-		38B61974074A794226CA30ED /* DataCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataCache.swift; sourceTree = "<group>"; };
-		935DB6D7808E8CF932FD0A4B /* NearbyAirportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyAirportsView.swift; sourceTree = "<group>"; };
-		E1EAA80A58C797660D363C96 /* AeronauticalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AeronauticalData.swift; sourceTree = "<group>"; };
-		21C73248A0D0085B13A4FED4 /* RoutePreviewMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePreviewMap.swift; sourceTree = "<group>"; };
-		D8B6F69549F807083D19A1D0 /* RouteAdvisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteAdvisor.swift; sourceTree = "<group>"; };
-		11A41792A5EE0FBE37F49015 /* RouteAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteAssistantView.swift; sourceTree = "<group>"; };
-		E9BD20E056F7E0A36A519853 /* RouteAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteAssistant.swift; sourceTree = "<group>"; };
-		1FAD97E097B106751EA85960 /* Aircraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Aircraft.swift; sourceTree = "<group>"; };
-		2F40CBF6AAE29822BCFC1266 /* AirportToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirportToolsView.swift; sourceTree = "<group>"; };
-		A711F365F25B6067C0B56BD9 /* ProcedureAdvisorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcedureAdvisorView.swift; sourceTree = "<group>"; };
-		29D7B40D18D2175305EBD71F /* RouteProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProfileView.swift; sourceTree = "<group>"; };
-		EBD286056AB2513C1B78B3E0 /* RouteBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteBuilderView.swift; sourceTree = "<group>"; };
-		B5B134A161727D9ADB4C326F /* TerrainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerrainService.swift; sourceTree = "<group>"; };
-		F4EC1161092C83629F8B9792 /* AltitudeProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AltitudeProfile.swift; sourceTree = "<group>"; };
 		1EBE7546616CB4288989F044 /* Waypoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Waypoint.swift; sourceTree = "<group>"; };
-		173477FF8DF51BEE10C22810 /* MapSymbols.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapSymbols.swift; sourceTree = "<group>"; };
+		1FAD97E097B106751EA85960 /* Aircraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Aircraft.swift; sourceTree = "<group>"; };
+		202FD58F1EC33DD3BD56793E /* AeroMapsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AeroMapsApp.swift; sourceTree = "<group>"; };
+		21C73248A0D0085B13A4FED4 /* RoutePreviewMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePreviewMap.swift; sourceTree = "<group>"; };
+		29D7B40D18D2175305EBD71F /* RouteProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProfileView.swift; sourceTree = "<group>"; };
+		2F40CBF6AAE29822BCFC1266 /* AirportToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirportToolsView.swift; sourceTree = "<group>"; };
+		372E3FF27E1C02E601934B84 /* NotamService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotamService.swift; sourceTree = "<group>"; };
+		38B61974074A794226CA30ED /* DataCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataCache.swift; sourceTree = "<group>"; };
+		3FD007B5B46423ED8315057A /* aerodata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = aerodata.json; path = Resources/aerodata.json; sourceTree = "<group>"; };
+		471D00E5DAB1D383FD896F62 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		EB7CB8EB8DFEDEF0470DAD99 /* Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Layout.swift; sourceTree = "<group>"; };
+		58BA0CD5F43A05C72CE32321 /* AviationWeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AviationWeatherService.swift; sourceTree = "<group>"; };
+		5C52D8A5A310C9E26D23893B /* AircraftEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AircraftEditorView.swift; sourceTree = "<group>"; };
+		68C54F07B3CECFD01A2AF394 /* AeronauticalDataUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AeronauticalDataUpdater.swift; sourceTree = "<group>"; };
+		935DB6D7808E8CF932FD0A4B /* NearbyAirportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyAirportsView.swift; sourceTree = "<group>"; };
+		A711F365F25B6067C0B56BD9 /* ProcedureAdvisorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcedureAdvisorView.swift; sourceTree = "<group>"; };
+		A7533A1AEDD281386A6CE1B8 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
+		AEC11075DC3A6F395FBCAB86 /* AirspaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirspaceService.swift; sourceTree = "<group>"; };
+		B5B134A161727D9ADB4C326F /* TerrainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerrainService.swift; sourceTree = "<group>"; };
 		CD5A00200E45AB99729FC8D8 /* FlightPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightPlannerView.swift; sourceTree = "<group>"; };
 		D80BCC16129EFDF294CD6D88 /* WeatherPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherPanelView.swift; sourceTree = "<group>"; };
+		D8B6F69549F807083D19A1D0 /* RouteAdvisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteAdvisor.swift; sourceTree = "<group>"; };
 		DB4484B5196BF79F13362354 /* BottomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheet.swift; sourceTree = "<group>"; };
+		E1EAA80A58C797660D363C96 /* AeronauticalData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AeronauticalData.swift; sourceTree = "<group>"; };
+		E9BD20E056F7E0A36A519853 /* RouteAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteAssistant.swift; sourceTree = "<group>"; };
+		EBD286056AB2513C1B78B3E0 /* RouteBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteBuilderView.swift; sourceTree = "<group>"; };
 		F0FF0FF0AA11BB22CC33DD44 /* FFMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFMClient.swift; sourceTree = "<group>"; };
-		3FD007B5B46423ED8315057A /* aerodata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = aerodata.json; path = "Resources/aerodata.json"; sourceTree = "<group>"; };
 		F0FF0FF2AA11BB22CC33DD44 /* ffm_mock_response.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ffm_mock_response.json; sourceTree = "<group>"; };
 		F0FF0FF5AA11BB22CC33DD44 /* LiveFlightService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFlightService.swift; sourceTree = "<group>"; };
 		F0FF0FF7AA11BB22CC33DD44 /* PromptTreeTracer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptTreeTracer.swift; sourceTree = "<group>"; };
 		F0FF0FF9AA11BB22CC33DD44 /* PromptTreeVisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptTreeVisualizerView.swift; sourceTree = "<group>"; };
 		F1D76B78AB11E51854EB1909 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F4EC1161092C83629F8B9792 /* AltitudeProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AltitudeProfile.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -95,6 +97,7 @@
 				F1D76B78AB11E51854EB1909 /* Assets.xcassets */,
 				DB4484B5196BF79F13362354 /* BottomSheet.swift */,
 				471D00E5DAB1D383FD896F62 /* ContentView.swift */,
+				EB7CB8EB8DFEDEF0470DAD99 /* Layout.swift */,
 				A7533A1AEDD281386A6CE1B8 /* Surfaces.swift */,
 				68C54F07B3CECFD01A2AF394 /* AeronauticalDataUpdater.swift */,
 				5C52D8A5A310C9E26D23893B /* AircraftEditorView.swift */,
@@ -231,6 +234,7 @@
 				05B384ECAF320D89CCE165EC /* AirportDetailView.swift in Sources */,
 				2DEB635E70606F7444D2D66A /* BottomSheet.swift in Sources */,
 				C6018A9A8850BFA3608F6E67 /* ContentView.swift in Sources */,
+				D146ABC9AA20DBE7B05990CC /* Layout.swift in Sources */,
 				8552B555AFE505B5361AB3EA /* Surfaces.swift in Sources */,
 				C5FD65D9B436A67BA35042F7 /* AeronauticalDataUpdater.swift in Sources */,
 				A14E3D2033C563B02F87690A /* AircraftEditorView.swift in Sources */,
@@ -274,7 +278,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"AeroMaps/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = U89X4DQF92;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AeroMaps/Info.plist;
@@ -364,7 +368,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"AeroMaps/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = U89X4DQF92;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AeroMaps/Info.plist;
