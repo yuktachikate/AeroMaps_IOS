@@ -109,6 +109,9 @@ struct FlightRecord: Codable, Identifiable, Hashable {
 
     var aircraftID: String
     var aircraftName: String
+    /// Tail number. A logbook entry without it identifies a *type*, not the
+    /// aircraft that was flown, which is most of the point of keeping one.
+    var registration: String = ""
 
     /// The plan as filed, frozen.
     var plannedPoints: [PlannedPoint]
@@ -143,6 +146,54 @@ struct FlightRecord: Codable, Identifiable, Hashable {
     }
 
     var maxAltitudeFT: Double { track.map(\.altitudeFT).max() ?? 0 }
+
+    /// Landings made: one per planned stop, plus the arrival.
+    ///
+    /// Counted from the plan rather than detected from the track, because a
+    /// touch-and-go and a low pass look identical in a 5-second GPS trace and
+    /// guessing between them would put a wrong number in a logbook.
+    var landings: Int {
+        guard isComplete, plannedPoints.count >= 2 else { return 0 }
+        return plannedPoints.dropFirst().dropLast().filter(\.isStop).count + 1
+    }
+
+    /// Time the aircraft was actually moving, as distinct from the wall-clock time
+    /// the recording was open. Engine-on to engine-off includes taxi and any time
+    /// sat at a stop; this counts only fixes with the aircraft in motion.
+    var airborneMinutes: Double {
+        guard track.count >= 2 else { return 0 }
+        var total = 0.0
+        for i in 1..<track.count {
+            let gap = track[i].time.timeIntervalSince(track[i - 1].time)
+            // A long gap means the recording paused, not that the leg took an hour.
+            guard gap > 0, gap < 120 else { continue }
+            if track[i].groundSpeedKT > 30 { total += gap }
+        }
+        return total / 60
+    }
+
+    /// Ground speed actually achieved. Captured on every fix and, until now, never
+    /// looked at — which is a shame, because the gap between this and the planned
+    /// true airspeed is the wind, measured rather than forecast.
+    var groundSpeed: (average: Double, max: Double)? {
+        let moving = track.filter { $0.groundSpeedKT > 30 }
+        guard !moving.isEmpty else { return nil }
+        let speeds = moving.map(\.groundSpeedKT)
+        return (speeds.reduce(0, +) / Double(speeds.count), speeds.max() ?? 0)
+    }
+
+    /// Altitude actually flown, sampled against distance along the track, for
+    /// drawing beside the planned profile.
+    var altitudeTrace: [(distanceNM: Double, altitudeFT: Double)] {
+        guard track.count >= 2 else { return [] }
+        var out: [(Double, Double)] = [(0, track[0].altitudeFT)]
+        var run = 0.0
+        for i in 1..<track.count {
+            run += AltitudePlanner.distanceNM(track[i - 1].coordinate, track[i].coordinate)
+            out.append((run, track[i].altitudeFT))
+        }
+        return out.map { (distanceNM: $0.0, altitudeFT: $0.1) }
+    }
 
     /// How far the aircraft ever got from where recording started.
     ///

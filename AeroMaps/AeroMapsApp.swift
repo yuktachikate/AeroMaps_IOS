@@ -643,6 +643,7 @@ final class MapState: ObservableObject {
             startedAt: Date(),
             aircraftID: route.aircraftID,
             aircraftName: route.aircraft.name,
+            registration: route.aircraft.registration,
             plannedPoints: points,
             plannedCruiseFT: route.altitudeFT,
             plannedDistanceNM: altitudeProfile.totalDistanceNM,

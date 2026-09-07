@@ -192,6 +192,50 @@ struct LoggedFlightDetailView: View {
                         }
                     }
 
+                    // The logbook-shaped facts, together at the top: what was flown,
+                    // in what, for how long, with how many landings.
+                    card("Flight", "airplane") {
+                        detail("Date", record.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        detail("Aircraft", record.registration.isEmpty
+                                            ? record.aircraftName
+                                            : "\(record.registration) · \(record.aircraftName)")
+                        detail("Route", record.plannedPoints.map(\.ident).joined(separator: " → "))
+                        detail("Block time", formatted(record.duration))
+                        if record.airborneMinutes > 0 {
+                            detail("Airborne", formatted(record.airborneMinutes * 60))
+                        }
+                        if record.landings > 0 { detail("Landings", "\(record.landings)") }
+                    }
+
+                    if let speed = record.groundSpeed, !record.neverMoved {
+                        card("Speed made good", "speedometer") {
+                            detail("Average ground speed", String(format: "%.0f kt", speed.average))
+                            detail("Maximum", String(format: "%.0f kt", speed.max))
+                            // The measured half of the wind story, against the figure
+                            // the plan was built on.
+                            let planned = record.plannedTimeMinutes > 0
+                                ? record.plannedDistanceNM / (record.plannedTimeMinutes / 60) : 0
+                            if planned > 0 {
+                                detail("Planned average", String(format: "%.0f kt", planned))
+                                let delta = speed.average - planned
+                                Text(abs(delta) < 3
+                                     ? "Close to plan — the forecast wind was about right."
+                                     : String(format: "%.0f kt %@ than planned, which is the wind you actually got.",
+                                              abs(delta), delta > 0 ? "faster" : "slower"))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if !record.altitudeTrace.isEmpty && !record.neverMoved {
+                        card("Altitude flown", "chart.xyaxis.line") {
+                            AltitudeTraceChart(record: record).frame(height: 120)
+                            Text("Grey is the planned cruise level; the line is what the aircraft actually flew.")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+
                     card("Planned vs flown", "chart.line.uptrend.xyaxis") {
                         comparison("Distance",
                                    String(format: "%.0f NM", record.plannedDistanceNM),
@@ -376,6 +420,16 @@ struct LoggedFlightDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
+    private func detail(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label).font(.caption).foregroundColor(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.caption).fontWeight(.medium)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
     private func comparison(_ label: String, _ planned: String, _ actual: String) -> some View {
         HStack {
             Text(label).font(.caption).foregroundColor(.secondary)
@@ -537,6 +591,59 @@ struct FlightTrackMap: UIViewRepresentable {
                                                  : (isParked ? "figure.stand" : "mappin"))
             view.displayPriority = (isDeviation || isParked) ? .required : .defaultLow
             return view
+        }
+    }
+}
+
+/// The altitude actually flown, against the level that was planned.
+///
+/// Deliberately spare: one line, one reference, no axes furniture. The question it
+/// answers is "did I fly the profile", and that is legible from the shape alone.
+struct AltitudeTraceChart: View {
+    let record: FlightRecord
+
+    var body: some View {
+        GeometryReader { geo in chart(in: geo.size) }
+    }
+
+    private var trace: [(distanceNM: Double, altitudeFT: Double)] { record.altitudeTrace }
+    private var maxDistance: Double { max(trace.last?.distanceNM ?? 1, 0.001) }
+    private var ceiling: Double {
+        max(max(trace.map(\.altitudeFT).max() ?? 0, Double(record.plannedCruiseFT)) * 1.15, 1)
+    }
+
+    private func x(_ d: Double, _ size: CGSize) -> CGFloat {
+        size.width * CGFloat(d / maxDistance)
+    }
+
+    private func y(_ ft: Double, _ size: CGSize) -> CGFloat {
+        size.height * (1 - CGFloat(ft / ceiling))
+    }
+
+    private func chart(in size: CGSize) -> some View {
+        let plannedY = y(Double(record.plannedCruiseFT), size)
+        return ZStack(alignment: .topLeading) {
+            // Planned cruise level, as a reference to read the flown line against.
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: plannedY))
+                p.addLine(to: CGPoint(x: size.width, y: plannedY))
+            }
+            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            .foregroundColor(.secondary.opacity(0.7))
+
+            Path { p in
+                guard let first = trace.first else { return }
+                p.move(to: CGPoint(x: x(first.distanceNM, size), y: y(first.altitudeFT, size)))
+                for point in trace.dropFirst() {
+                    p.addLine(to: CGPoint(x: x(point.distanceNM, size), y: y(point.altitudeFT, size)))
+                }
+            }
+            .stroke(Color.green, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+
+            Text("\(record.plannedCruiseFT.formatted()) ft planned")
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+                .offset(y: max(plannedY - 12, 0))
         }
     }
 }
