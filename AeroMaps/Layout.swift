@@ -24,10 +24,17 @@ enum PlanningLayout {
     case wideSheet
 
     init(horizontal: UserInterfaceSizeClass?, vertical: UserInterfaceSizeClass?) {
-        if horizontal == .regular {
-            self = .wideSheet
-        } else if vertical == .compact {
+        // Vertical is tested first, and the order is the whole point. A large
+        // iPhone — Plus and Max models — reports a *regular* horizontal size class
+        // in landscape, exactly like an iPad. Asking about width first therefore
+        // handed those phones the iPad layout whenever they were turned sideways:
+        // a 680pt panel over 72% of an already short screen. Short height is the
+        // stronger constraint, so it decides first, and only something with room in
+        // both directions gets the wide sheet.
+        if vertical == .compact {
             self = .compactSheet
+        } else if horizontal == .regular {
+            self = .wideSheet
         } else {
             self = .bottomSheet
         }
