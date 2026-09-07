@@ -47,6 +47,14 @@ struct LogbookView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
             }
             .sheet(item: $selected) { LoggedFlightDetailView(record: $0) }
+            // Arriving straight from "View summary" opens that flight rather than
+            // making the pilot pick it out of the list they just came from.
+            .onAppear {
+                if let justFinished = mapState.completedFlight {
+                    selected = justFinished
+                    mapState.completedFlight = nil
+                }
+            }
         }
     }
 
@@ -168,10 +176,40 @@ struct LoggedFlightDetailView: View {
                         }
                     }
 
+                    if !record.notes.isEmpty {
+                        card("Notes", "pencil.and.list.clipboard") {
+                            Text(record.notes)
+                                .font(.caption)
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    // The items themselves, by phase. A bare count answered "did you
+                    // tick anything" but not "what did you actually check", which is
+                    // the question worth being able to answer afterwards.
                     if !record.checklistCompleted.isEmpty {
+                        let done = Set(record.checklistCompleted)
                         card("Checklist", "checklist") {
-                            Text("\(record.checklistCompleted.count) items ticked during this flight.")
-                                .font(.caption).foregroundColor(.secondary)
+                            ForEach(ChecklistView.phases) { phase in
+                                let ticked = phase.items.filter { done.contains($0.id) }
+                                if !ticked.isEmpty {
+                                    Text(phase.title.uppercased())
+                                        .font(.system(size: 9, weight: .heavy))
+                                        .foregroundColor(.secondary)
+                                        .padding(.top, 2)
+                                    ForEach(ticked) { item in
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption2).foregroundColor(.green)
+                                            Text(item.action).font(.caption)
+                                            Spacer()
+                                            Text(item.response)
+                                                .font(.caption2).foregroundColor(.secondary)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

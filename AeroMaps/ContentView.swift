@@ -2673,21 +2673,9 @@ struct TopNavigationHUDBanner: View {
             }
 
             Spacer()
-
-            Button(action: {
-                withAnimation {
-                    mapState.cancelRouteNavigation()
-                }
-            }) {
-                Text("Finish")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.green)
-                    .foregroundColor(.black)
-                    .clipShape(Capsule())
-            }
+            // No button here. The sheet directly below owns what happens next —
+            // view the summary, or finish — and having a "Finish" here as well meant
+            // two completion UIs on screen at once saying slightly different things.
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

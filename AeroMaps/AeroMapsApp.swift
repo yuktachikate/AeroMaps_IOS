@@ -308,6 +308,9 @@ final class MapState: ObservableObject {
     let flightLog = FlightLog()
     /// The flight in progress, if any. Nil on the ground.
     @Published var activeFlight: FlightRecord?
+    /// The flight just finished, held so the summary can be opened straight from
+    /// the map instead of being hunted for in the logbook.
+    @Published var completedFlight: FlightRecord?
     /// When the last track fix was stored, so fixes are thinned rather than logged
     /// at the full rate of the GPS.
     private var lastTrackFixAt: Date?
@@ -657,8 +660,37 @@ final class MapState: ObservableObject {
         guard var flight = activeFlight, flight.endedAt == nil else { return }
         flight.endedAt = Date()
         flight.checklistCompleted = Array(checkedChecklistItems)
+        flight.notes = flightNotes
         flightLog.upsert(flight)
+        completedFlight = flight
         activeFlight = nil
+    }
+
+    /// The next waypoint the aircraft is flying toward, if any.
+    var nextWaypoint: Waypoint? {
+        let index = currentWaypointIndex + 1
+        guard index < route.waypoints.count else { return nil }
+        return route.waypoints[index]
+    }
+
+    /// True when the leg being flown ends at a planned landing rather than at the
+    /// destination — the case where "finish the flight" is the wrong action and
+    /// "arrived, carry on to the next sector" is the right one.
+    var isApproachingStop: Bool {
+        guard let next = nextWaypoint else { return false }
+        return next.isStop && currentWaypointIndex + 1 < route.waypoints.count - 1
+    }
+
+    /// Marks the current stop as reached and continues onto the next sector. The
+    /// flight record stays open: taxiing in, refuelling and departing again is one
+    /// flight with a pause in it, not two records.
+    func arriveAtStop() {
+        guard isApproachingStop else { return }
+        let arrived = nextWaypoint
+        currentWaypointIndex = min(currentWaypointIndex + 1, route.waypoints.count - 1)
+        if let arrived {
+            recordAmendment(.waypointAdded, summary: "Arrived at \(arrived.ident)")
+        }
     }
 
     /// Adds a fix to the flight's track.
@@ -708,6 +740,56 @@ final class MapState: ObservableObject {
             }
         }
         return total
+    }
+
+    /// What the profile wants the aircraft to be doing vertically, right now.
+    ///
+    /// The plan already knew this — it is the same curve the route list draws — but
+    /// in the air none of it was surfaced, so a pilot flying the route had no
+    /// prompt to start a climb or a descent and had to read it off the waypoint
+    /// list themselves.
+    struct AltitudeGuidance {
+        enum Action { case climb, descend, maintain }
+        let action: Action
+        /// Where the profile says the aircraft should be at this point on the route.
+        let targetFT: Int
+        /// GPS altitude, when there is a fix. Nil on the ground or without location.
+        let currentFT: Int?
+        /// Signed difference, positive means climb.
+        let deltaFT: Int
+        /// Miles until the descent should begin, once past the top of climb.
+        let toTopOfDescentNM: Double?
+
+        var label: String {
+            switch action {
+            case .climb:    return "Climb to \(targetFT.formatted()) ft"
+            case .descend:  return "Descend to \(targetFT.formatted()) ft"
+            case .maintain: return "Maintain \(targetFT.formatted()) ft"
+            }
+        }
+    }
+
+    /// Vertical guidance for the current position, or nil when not flying a route.
+    var altitudeGuidance: AltitudeGuidance? {
+        guard isNavigatingRoute, !altitudeProfile.isEmpty else { return nil }
+        // Distance flown along the route, derived from what is left rather than
+        // tracked separately, so it stays consistent with the figure on screen.
+        let along = max(altitudeProfile.totalDistanceNM - remainingRouteNM, 0)
+        guard let target = altitudeProfile.altitudeFT(atDistanceNM: along) else { return nil }
+
+        let currentFT = locationManager?.lastLocation.map { Int(($0.altitude * 3.280839895).rounded()) }
+        let delta = currentFT.map { target - $0 } ?? 0
+
+        // A few hundred feet is normal altitude keeping, not an instruction to climb.
+        let action: AltitudeGuidance.Action
+        if currentFT == nil { action = .maintain }
+        else if delta > 300 { action = .climb }
+        else if delta < -300 { action = .descend }
+        else { action = .maintain }
+
+        let toTOD = altitudeProfile.topOfDescentNM - along
+        return AltitudeGuidance(action: action, targetFT: target, currentFT: currentFT,
+                                deltaFT: delta, toTopOfDescentNM: toTOD > 1 ? toTOD : nil)
     }
 
     /// Fuel as it stands now, estimated from time airborne. Nil on the ground.

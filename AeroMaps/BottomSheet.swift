@@ -225,6 +225,9 @@ struct BottomSheet: View {
                                 .padding(.horizontal, 14)
                         }
 
+                        LogbookRow(mapState: mapState)
+                            .padding(.horizontal, 14)
+
                         SecondaryToolsView(mapState: mapState)
                             .padding(.horizontal, 16)
 
@@ -479,6 +482,46 @@ struct AircraftCard: View {
 
 /// Briefing and reference screens. Deliberately smaller and further down than the
 /// refine bar — these are things a pilot reaches for, not the main flow.
+/// Previous flights, given a row of its own.
+///
+/// This was a chip inside the horizontally scrolling briefing strip, which meant
+/// finding it required expanding the sheet and then scrolling sideways past six
+/// other tools — so the flight log looked, reasonably, like it had never been
+/// built. It states how many flights are recorded, which is also the answer to
+/// "is this thing actually saving anything".
+struct LogbookRow: View {
+    @ObservedObject var mapState: MapState
+
+    private var count: Int { mapState.flightLog.records.count }
+
+    var body: some View {
+        Button { mapState.activeTool = .logbook } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "book.closed.fill")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Previous flights")
+                        .font(.subheadline).fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text(count == 0
+                         ? "No flights recorded yet"
+                         : "\(count) flight\(count == 1 ? "" : "s") · \(String(format: "%.1f", mapState.flightLog.totalHours)) hours")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundColor(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(Color.white.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
 struct SecondaryToolsView: View {
     @ObservedObject var mapState: MapState
 
@@ -524,10 +567,6 @@ struct SecondaryToolsView: View {
                     ActionButton(title: "Weather\nBrief", icon: "cloud.sun.fill",
                                  color: .orange, enabled: true) {
                         mapState.showingWeatherPanel = true
-                    }
-                    ActionButton(title: "Logbook", icon: "book.closed",
-                                 color: .blue, enabled: true) {
-                        mapState.activeTool = .logbook
                     }
                     ActionButton(title: "Notes", icon: "pencil.and.list.clipboard",
                                  color: .gray, enabled: true) {
@@ -621,7 +660,9 @@ struct ConfirmFlightPlanBanner: View {
 
     var body: some View {
         Group {
-            if mapState.isNavigatingRoute {
+            if mapState.isNavigatingRoute && mapState.routeCompleted {
+                flightCompleteCard
+            } else if mapState.isNavigatingRoute {
                 inFlightCard
             } else if mapState.route.waypoints.count < 2 {
                 draftCard
@@ -803,16 +844,153 @@ struct ConfirmFlightPlanBanner: View {
                     .lineLimit(1)
             }
 
+            // What the profile wants the aircraft doing vertically. The plan always
+            // knew this; in the air it was never said, so the pilot had to read it
+            // off the waypoint list themselves.
+            if let guidance = mapState.altitudeGuidance {
+                HStack(spacing: 8) {
+                    Image(systemName: guidanceIcon(guidance))
+                        .font(.subheadline).fontWeight(.bold)
+                        .foregroundColor(guidanceTint(guidance))
+                    Text(guidance.label)
+                        .font(.subheadline).fontWeight(.bold)
+                        .foregroundColor(guidanceTint(guidance))
+                    if let current = guidance.currentFT, guidance.action != .maintain {
+                        Text("(now \(current.formatted()) ft)")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    Spacer()
+                    if let tod = guidance.toTopOfDescentNM {
+                        Text("TOD in \(Int(tod.rounded())) NM")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(guidanceTint(guidance).opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+            }
+
             ProgressView(value: progressFraction)
                 .tint(.cyan)
 
+            // Checklist and notes belong in reach while flying, not buried in a
+            // horizontally scrolling row inside the expanded sheet.
+            HStack(spacing: 8) {
+                Button { mapState.showingChecklist = true } label: {
+                    inFlightChip("Checklist", icon: "checklist",
+                                 badge: mapState.checkedChecklistItems.isEmpty
+                                     ? nil : "\(mapState.checkedChecklistItems.count)")
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                Button { mapState.showingNotes = true } label: {
+                    inFlightChip("Notes", icon: "pencil.and.list.clipboard",
+                                 badge: mapState.flightNotes.isEmpty ? nil : "•")
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                Button { mapState.activeTool = .amend } label: {
+                    inFlightChip("Amend", icon: "arrow.triangle.branch", badge: nil)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+
             HStack(spacing: 10) {
+                // One obvious action, named for where the aircraft actually is.
+                // "Finish Flight" and "Cancel" were two ways to end the same flight
+                // differing only in a completion flag, and neither was the thing a
+                // pilot wants partway down a route with a stop in it.
                 Button {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        mapState.completeRoute()
+                        if mapState.isApproachingStop { mapState.arriveAtStop() }
+                        else { mapState.completeRoute() }
                     }
                 } label: {
-                    pillLabel("Finish Flight", icon: "flag.checkered", background: .cyan, foreground: .black)
+                    pillLabel(mapState.isApproachingStop
+                                ? "Arrived at \(mapState.nextWaypoint?.ident ?? "stop")"
+                                : "Finish Flight",
+                              icon: mapState.isApproachingStop ? "pause.circle.fill" : "flag.checkered",
+                              background: .cyan, foreground: .black)
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                // Ending early is rare and not the same as arriving, so it sits
+                // behind a menu rather than beside the primary action.
+                Menu {
+                    Button(role: .destructive) {
+                        withAnimation { mapState.cancelRouteNavigation() }
+                    } label: { Label("End flight early", systemImage: "xmark.circle") }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.subheadline).fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 34)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+    }
+
+    private func inFlightChip(_ title: String, icon: String, badge: String?) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 10, weight: .bold))
+            Text(title).font(.system(size: 11, weight: .semibold))
+            if let badge {
+                Text(badge)
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Color.cyan.opacity(0.35))
+                    .clipShape(Capsule())
+            }
+        }
+        .foregroundColor(.white.opacity(0.9))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func guidanceIcon(_ g: MapState.AltitudeGuidance) -> String {
+        switch g.action {
+        case .climb:    return "arrow.up.right.circle.fill"
+        case .descend:  return "arrow.down.right.circle.fill"
+        case .maintain: return "equal.circle.fill"
+        }
+    }
+
+    private func guidanceTint(_ g: MapState.AltitudeGuidance) -> Color {
+        switch g.action {
+        case .climb:    return .green
+        case .descend:  return .orange
+        case .maintain: return .cyan
+        }
+    }
+
+    /// Shown once the final waypoint is reached. The flight is over, so the card
+    /// stops offering flight controls and offers the record instead.
+    private var flightCompleteCard: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.headline).foregroundColor(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("FLIGHT COMPLETE")
+                        .font(.caption2).fontWeight(.bold).foregroundColor(.green)
+                    Text(mapState.route.displayName)
+                        .font(.caption).foregroundColor(.white).lineLimit(1)
+                }
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    mapState.activeTool = .logbook
+                } label: {
+                    pillLabel("View summary", icon: "doc.text.magnifyingglass",
+                              background: .green, foreground: .black)
                 }
                 .buttonStyle(PlainButtonStyle())
 
@@ -821,7 +999,8 @@ struct ConfirmFlightPlanBanner: View {
                         mapState.cancelRouteNavigation()
                     }
                 } label: {
-                    pillLabel("Cancel", icon: "xmark", background: Color.white.opacity(0.15), foreground: .white)
+                    pillLabel("Done", icon: "checkmark",
+                              background: Color.white.opacity(0.15), foreground: .white)
                 }
                 .buttonStyle(PlainButtonStyle())
             }

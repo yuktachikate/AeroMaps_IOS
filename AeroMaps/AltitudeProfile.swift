@@ -165,6 +165,29 @@ struct AltitudeProfile {
 
     var hasStops: Bool { sectors.count > 1 }
 
+    /// The planned altitude at a given distance along the route.
+    ///
+    /// The profile is stored as a polyline of samples, so this interpolates between
+    /// them. It exists for the in-flight case: "what should I be at, here, now" is a
+    /// different question from "what altitude did I assign to that waypoint", and
+    /// answering it from waypoint altitudes alone would step the target rather than
+    /// ramp it, telling a pilot to climb 3,000 ft the instant they crossed a fix.
+    func altitudeFT(atDistanceNM distance: Double) -> Int? {
+        guard !samples.isEmpty else { return nil }
+        if distance <= samples[0].distanceNM { return Int(samples[0].altitudeFT.rounded()) }
+        if let last = samples.last, distance >= last.distanceNM {
+            return Int(last.altitudeFT.rounded())
+        }
+        for i in 1..<samples.count where distance <= samples[i].distanceNM {
+            let a = samples[i - 1], b = samples[i]
+            let span = b.distanceNM - a.distanceNM
+            guard span > 0 else { return Int(a.altitudeFT.rounded()) }
+            let t = (distance - a.distanceNM) / span
+            return Int((a.altitudeFT + (b.altitudeFT - a.altitudeFT) * t).rounded())
+        }
+        return samples.last.map { Int($0.altitudeFT.rounded()) }
+    }
+
     var isEmpty: Bool { legs.isEmpty }
 
     var conflictedLegs: [RouteLeg] {
