@@ -93,6 +93,21 @@ struct RouteLeg: Identifiable {
     }
 }
 
+/// One flight within a route: from a departure or a stop, to the next stop or the
+/// destination.
+struct RouteSector: Identifiable {
+    var id: String { fromIdent + ">" + toIdent }
+    let fromIdent: String
+    let toIdent: String
+    let distanceNM: Double
+    let timeMinutes: Double
+    let fuelGallons: Double
+    let endsAtStop: Bool
+    /// True when the tanks are filled at the end of this sector, so the next one
+    /// starts full rather than continuing to run down.
+    let refuelsAtEnd: Bool
+}
+
 /// A point on the altitude-vs-distance graph.
 struct ProfileSample {
     let distanceNM: Double
@@ -127,6 +142,28 @@ struct AltitudeProfile {
     /// Highest altitude the profile actually reaches. Lower than the requested
     /// cruise when the route is too short to climb that high.
     var achievedAltitudeFT: Int = 0
+    /// True when at least one leg was timed against a real forecast wind. When
+    /// false every figure here is a still-air estimate, which is what this planner
+    /// used to produce unconditionally.
+    var usedWind: Bool = false
+    /// Distance-weighted mean headwind across the route, for a one-line summary.
+    var meanHeadwindKT: Double = 0
+    /// The flights between planned landings. One sector for a route with no stops.
+    var sectors: [RouteSector] = []
+    /// Time planned on the ground at stops. Not flying time, but it is why an
+    /// arrival is later than the flight time suggests.
+    var totalGroundMinutes: Double = 0
+
+    /// Block time: flying plus time on the ground at stops.
+    var totalElapsedMinutes: Double { totalTimeMinutes + totalGroundMinutes }
+
+    /// Fuel needed for the hungriest single sector. With a refuelling stop this,
+    /// not the route total, is what the tanks have to cover.
+    var maxSectorFuelGallons: Double {
+        sectors.map(\.fuelGallons).max() ?? totalFuelGallons
+    }
+
+    var hasStops: Bool { sectors.count > 1 }
 
     var isEmpty: Bool { legs.isEmpty }
 
@@ -175,7 +212,13 @@ enum AltitudePlanner {
 
         var anchors: [(distance: Double, altitude: Double)] = [(0, Double(departureFT))]
         for (i, wp) in waypoints.enumerated() where i > 0 && i < waypoints.count - 1 {
-            if let manual = wp.plannedAltitudeFT {
+            // A planned landing outranks a pinned cruise altitude: you cannot
+            // overfly a field you have said you are stopping at. Anchoring the
+            // profile to the ground here is what makes the descent and the
+            // subsequent climb appear, and what makes the leg times honest.
+            if wp.isStop {
+                anchors.append((cumulative[i], Double(groundElevation(wp, terrain: terrain))))
+            } else if let manual = wp.plannedAltitudeFT {
                 anchors.append((cumulative[i], Double(manual)))
             }
         }
@@ -421,7 +464,52 @@ enum AltitudePlanner {
 
         profile.totalTimeMinutes = profile.legs.reduce(0) { $0 + $1.timeMinutes }
         profile.totalFuelGallons = profile.legs.reduce(0) { $0 + $1.fuelGallons }
+        // Sectors: the flights between landings. A route with a fuel stop is two
+        // flights, and the question "is there enough fuel?" is asked of the longest
+        // sector, not of the total — which is the difference between a route that
+        // works and one that is planned to run the tanks dry before the stop.
+        profile.sectors = Self.buildSectors(waypoints: waypoints, legs: profile.legs)
+        profile.totalGroundMinutes = waypoints.dropFirst().dropLast()
+            .compactMap(\.stop).reduce(0) { $0 + Double($1.groundMinutes) }
+
+        profile.usedWind = profile.legs.contains { $0.windApplied }
+        let windedDistance = profile.legs.filter(\.windApplied).reduce(0) { $0 + $1.distanceNM }
+        profile.meanHeadwindKT = windedDistance > 0
+            ? profile.legs.filter(\.windApplied).reduce(0) { $0 + $1.headwindKT * $1.distanceNM } / windedDistance
+            : 0
         return profile
+    }
+
+    /// Splits the legs into sectors at every planned landing.
+    static func buildSectors(waypoints: [Waypoint], legs: [RouteLeg]) -> [RouteSector] {
+        guard !legs.isEmpty else { return [] }
+        var sectors: [RouteSector] = []
+        var startIndex = 0
+        var distance = 0.0, minutes = 0.0, fuel = 0.0
+
+        func close(at endIndex: Int) {
+            guard endIndex > startIndex else { return }
+            sectors.append(RouteSector(
+                fromIdent: waypoints[startIndex].ident,
+                toIdent: waypoints[endIndex].ident,
+                distanceNM: distance, timeMinutes: minutes, fuelGallons: fuel,
+                endsAtStop: waypoints[endIndex].isStop,
+                refuelsAtEnd: waypoints[endIndex].stop?.refuels ?? false))
+            startIndex = endIndex
+            distance = 0; minutes = 0; fuel = 0
+        }
+
+        for (i, leg) in legs.enumerated() {
+            distance += leg.distanceNM
+            minutes += leg.timeMinutes
+            fuel += leg.fuelGallons
+            let arrivalIndex = i + 1
+            if arrivalIndex < waypoints.count, waypoints[arrivalIndex].isStop {
+                close(at: arrivalIndex)
+            }
+        }
+        close(at: waypoints.count - 1)
+        return sectors
     }
 
     // MARK: Cruise altitude suggestion

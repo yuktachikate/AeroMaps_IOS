@@ -255,6 +255,15 @@ struct WaypointRowView: View {
                         .foregroundColor(waypoint.reason == nil ? .white.opacity(0.55) : .orange.opacity(0.85))
                         .lineLimit(1)
 
+                    if let stop = waypoint.stop {
+                        Label(stop.refuels
+                                ? "\(stop.kind.label) · \(stop.groundMinutes) min · to \(Int(stop.refuelToGal ?? 0)) gal"
+                                : "\(stop.kind.label) · \(stop.groundMinutes) min",
+                              systemImage: stop.kind.symbolName)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.green)
+                    }
+
                     if belowMinimum, let floor = minimumSafeFT {
                         Label("min \(floor.formatted()) ft", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 9, weight: .semibold))
@@ -293,6 +302,23 @@ struct WaypointRowView: View {
                         mapState.setWaypointAltitude(id: waypoint.id, altitudeFT: nil)
                     } label: { Label("Use suggested altitude", systemImage: "wand.and.stars") }
                 }
+
+                // Only interior airports: you cannot stop at your own departure or
+                // destination, and a coordinate in the middle of a valley is not a
+                // place to land.
+                if !isDeparture, !isDestination, waypoint.kind == .airport {
+                    Divider()
+                    if waypoint.isStop {
+                        Button {
+                            mapState.setStop(id: waypoint.id, stop: nil)
+                        } label: { Label("Don't stop — overfly", systemImage: "arrow.up.right") }
+                        Menu("Change stop") { stopOptions }
+                    } else {
+                        Menu {
+                            stopOptions
+                        } label: { Label("Stop here", systemImage: "pause.circle") }
+                    }
+                }
                 if let floor = minimumSafeFT {
                     Button {
                         mapState.setWaypointAltitude(id: waypoint.id, altitudeFT: floor)
@@ -312,6 +338,28 @@ struct WaypointRowView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+    }
+
+    /// Presets rather than a form: on the ground before a flight these get tapped
+    /// once, and the numbers are editable afterwards from the same menu.
+    @ViewBuilder
+    private var stopOptions: some View {
+        Button {
+            mapState.setStop(id: waypoint.id,
+                             stop: StopPlan(kind: .fuel, groundMinutes: 45,
+                                            refuelToGal: mapState.route.aircraft.usableFuelGal))
+        } label: { Label("Fuel stop — 45 min, fill tanks", systemImage: "fuelpump.fill") }
+
+        Button {
+            mapState.setStop(id: waypoint.id,
+                             stop: StopPlan(kind: .rest, groundMinutes: 30, refuelToGal: nil))
+        } label: { Label("Rest stop — 30 min, no fuel", systemImage: "cup.and.saucer.fill") }
+
+        Button {
+            mapState.setStop(id: waypoint.id,
+                             stop: StopPlan(kind: .overnight, groundMinutes: 12 * 60,
+                                            refuelToGal: mapState.route.aircraft.usableFuelGal))
+        } label: { Label("Overnight — fill tanks", systemImage: "moon.stars.fill") }
     }
 
     /// Altitude for this point, with steppers. Auto values show dimmed; touching a

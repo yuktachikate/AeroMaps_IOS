@@ -475,10 +475,29 @@ final class MapState: ObservableObject {
 
     /// Applies the planner's recommended cruise altitude and clears any per-waypoint
     /// overrides, returning the route to a clean computed profile.
+    /// Marks a waypoint as a planned landing, or clears it.
+    ///
+    /// Assigned through a local copy so the route's didSet — which rebuilds the
+    /// whole vertical profile — fires once.
+    func setStop(id: UUID, stop: StopPlan?) {
+        guard let index = route.waypoints.firstIndex(where: { $0.id == id }) else { return }
+        var plan = route
+        plan.waypoints[index].stop = stop
+        // A landing and a pinned cruise altitude are contradictory instructions;
+        // the landing wins, so the stale pin is cleared rather than left to confuse
+        // the profile and the validator.
+        if stop != nil { plan.waypoints[index].plannedAltitudeFT = nil }
+        route = plan
+    }
+
     func applySuggestedCruiseAltitude() {
         guard let suggestion = cruiseSuggestion else { return }
-        route.altitudeFT = suggestion.altitudeFT
-        for i in route.waypoints.indices { route.waypoints[i].plannedAltitudeFT = nil }
+        // One assignment, not one per waypoint: `route`'s didSet recomputes the
+        // entire vertical profile, so mutating in place recomputed it N times.
+        var plan = route
+        plan.altitudeFT = suggestion.altitudeFT
+        for i in plan.waypoints.indices { plan.waypoints[i].plannedAltitudeFT = nil }
+        route = plan
     }
 
     func deleteSavedRoute(id: UUID) {

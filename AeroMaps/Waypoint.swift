@@ -35,6 +35,47 @@ enum WaypointKind: String, Codable, Hashable {
 ///
 /// `icao` is kept as an alias for `ident` because the map layer, the navigation
 /// HUD and the saved-route library all address waypoints by that name.
+/// A planned landing partway along a route.
+///
+/// A route with a stop in it is not one flight, it is two or more. The aircraft
+/// descends, lands, sits on the ground, and departs again — so the vertical profile
+/// has to come all the way down to the field rather than overflying it, and the
+/// fuel accounting has to restart if the tanks are filled. Treating a stop as just
+/// another waypoint gets both wrong, and gets them wrong in the direction that
+/// makes a route look more achievable than it is.
+struct StopPlan: Hashable, Codable {
+    enum Kind: String, Codable, CaseIterable {
+        case fuel, rest, overnight, other
+
+        var label: String {
+            switch self {
+            case .fuel:      return "Fuel stop"
+            case .rest:      return "Rest stop"
+            case .overnight: return "Overnight"
+            case .other:     return "Stop"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .fuel:      return "fuelpump.fill"
+            case .rest:      return "cup.and.saucer.fill"
+            case .overnight: return "moon.stars.fill"
+            case .other:     return "pause.circle.fill"
+            }
+        }
+    }
+
+    var kind: Kind = .fuel
+    /// Time on the ground, which counts toward arrival time but not toward fuel burn.
+    var groundMinutes: Int = 45
+    /// Fuel in the tanks on departing this stop. Nil means no uplift — a rest stop
+    /// leaves you with whatever you landed with.
+    var refuelToGal: Double?
+
+    var refuels: Bool { refuelToGal != nil }
+}
+
 struct Waypoint: Identifiable, Hashable {
     var id = UUID()
     var ident: String
@@ -57,6 +98,11 @@ struct Waypoint: Identifiable, Hashable {
     /// a level change, terrain, fuel — and this is the reason shown to the pilot.
     /// Nil for points the pilot placed themselves.
     var reason: String?
+
+    /// Set when the aircraft actually lands here rather than passing overhead.
+    var stop: StopPlan?
+
+    var isStop: Bool { stop != nil }
 
     var icao: String { ident }
 
