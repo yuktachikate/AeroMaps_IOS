@@ -180,7 +180,8 @@ struct RouteBuilderView: View {
 
                 if index < mapState.route.waypoints.count - 1,
                    index < mapState.altitudeProfile.legs.count {
-                    LegRowView(leg: mapState.altitudeProfile.legs[index])
+                    LegRowView(leg: mapState.altitudeProfile.legs[index],
+                               profile: mapState.altitudeProfile)
                 }
             }
         }
@@ -441,12 +442,87 @@ struct WaypointRowView: View {
 /// and fuel, plus a terrain warning when the planned altitude is too low.
 struct LegRowView: View {
     let leg: RouteLeg
+    /// Needed for top of climb and top of descent, which are properties of the whole
+    /// profile rather than of one leg.
+    var profile: AltitudeProfile = AltitudeProfile()
 
     private var conflict: Bool {
         leg.hasTerrainConflict(minClearanceFT: AltitudeProfile.minimumClearanceFT)
     }
 
+    /// Where the level-off and the descent fall inside this leg, if they do.
+    ///
+    /// The profile has always known both — it computes them to draw the altitude
+    /// graph — but the route list only ever showed the phase name. "CLB/CRZ" tells a
+    /// pilot the leg contains a climb somewhere; it does not tell them the thing they
+    /// actually need, which is how far along to stop climbing and when to start down.
+    private var topOfClimbNM: Double? {
+        let offset = profile.topOfClimbNM - leg.startDistanceNM
+        guard offset > 0.5, offset < leg.distanceNM - 0.5 else { return nil }
+        return offset
+    }
+
+    private var topOfDescentNM: Double? {
+        let offset = profile.topOfDescentNM - leg.startDistanceNM
+        guard offset > 0.5, offset < leg.distanceNM - 0.5 else { return nil }
+        return offset
+    }
+
+    /// True when the profile tops out at a peak rather than holding a cruise — the
+    /// route is too short to reach the planned level and start down from it.
+    private var neverCruises: Bool {
+        profile.topOfDescentNM - profile.topOfClimbNM < 1
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            legLine
+            // Stated as a distance from the start of the leg, because that is how it
+            // gets flown: level off N miles after the last waypoint, start down N
+            // miles after it.
+            if neverCruises, let nm = topOfClimbNM {
+                // Climb and descent meet: the leg is too short to level off at all,
+                // so there is one turning point, not two. Printing "level off" and
+                // "start down" at the same mile would be worse than saying nothing.
+                cue("Top of climb \(Int(nm.rounded())) NM after \(leg.fromIdent) — straight back down",
+                    "triangle.fill", .yellow,
+                    "\(profile.achievedAltitudeFT.formatted()) ft peak")
+            } else {
+                if let nm = topOfClimbNM {
+                    cue("Level off \(Int(nm.rounded())) NM after \(leg.fromIdent)",
+                        "arrow.up.right.circle.fill", .green,
+                        "\(profile.achievedAltitudeFT.formatted()) ft")
+                }
+                if let nm = topOfDescentNM {
+                    cue("Start down \(Int(nm.rounded())) NM after \(leg.fromIdent)",
+                        "arrow.down.right.circle.fill", .orange,
+                        "\(Int(leg.distanceNM - nm)) NM to \(leg.toIdent)")
+                }
+            }
+        }
+    }
+
+    /// One cue on the descent or level-off point.
+    private func cue(_ text: String, _ icon: String, _ tint: Color, _ trailing: String) -> some View {
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(Color.white.opacity(0.15))
+                .frame(width: 1, height: 14)
+                .padding(.leading, 22)
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(tint)
+            Text(text)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(tint)
+            Spacer(minLength: 4)
+            Text(trailing)
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.55))
+        }
+    }
+
+    private var legLine: some View {
         HStack(spacing: 8) {
             Rectangle()
                 .fill(Color.white.opacity(0.15))
