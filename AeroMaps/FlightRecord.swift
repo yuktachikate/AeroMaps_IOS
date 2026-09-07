@@ -127,6 +127,65 @@ struct FlightRecord: Codable, Identifiable, Hashable {
     var amendments: [RouteAmendment] = []
     var notes: String = ""
 
+    // MARK: Decoding
+
+    /// Decoded field by field, tolerating anything the key is missing for.
+    ///
+    /// Swift's synthesised Codable does *not* fall back to a property's default
+    /// value — it calls `decode` and throws `keyNotFound`. So adding one new
+    /// non-optional property, even with a default, makes every previously saved
+    /// record fail to decode. That happened: adding `registration` silently emptied
+    /// the whole logbook, while the flights sat intact on disk and unreadable.
+    ///
+    /// A log has to survive its own schema changing, so every field here is
+    /// optional at the boundary and falls back to the value a new record would have.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        // The one genuinely required field: a flight with no start time is not a
+        // record of anything.
+        startedAt = try c.decode(Date.self, forKey: .startedAt)
+        endedAt = try c.decodeIfPresent(Date.self, forKey: .endedAt)
+        aircraftID = try c.decodeIfPresent(String.self, forKey: .aircraftID) ?? ""
+        aircraftName = try c.decodeIfPresent(String.self, forKey: .aircraftName) ?? "Unknown aircraft"
+        registration = try c.decodeIfPresent(String.self, forKey: .registration) ?? ""
+        plannedPoints = try c.decodeIfPresent([PlannedPoint].self, forKey: .plannedPoints) ?? []
+        plannedCruiseFT = try c.decodeIfPresent(Int.self, forKey: .plannedCruiseFT) ?? 0
+        plannedDistanceNM = try c.decodeIfPresent(Double.self, forKey: .plannedDistanceNM) ?? 0
+        plannedTimeMinutes = try c.decodeIfPresent(Double.self, forKey: .plannedTimeMinutes) ?? 0
+        plannedFuelGallons = try c.decodeIfPresent(Double.self, forKey: .plannedFuelGallons) ?? 0
+        fuelOnBoardAtStartGal = try c.decodeIfPresent(Double.self, forKey: .fuelOnBoardAtStartGal) ?? 0
+        track = try c.decodeIfPresent([TrackPoint].self, forKey: .track) ?? []
+        checklistCompleted = try c.decodeIfPresent([String].self, forKey: .checklistCompleted) ?? []
+        amendments = try c.decodeIfPresent([RouteAmendment].self, forKey: .amendments) ?? []
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+    }
+
+    init(id: UUID = UUID(), startedAt: Date, endedAt: Date? = nil,
+         aircraftID: String, aircraftName: String, registration: String = "",
+         plannedPoints: [PlannedPoint], plannedCruiseFT: Int,
+         plannedDistanceNM: Double, plannedTimeMinutes: Double,
+         plannedFuelGallons: Double, fuelOnBoardAtStartGal: Double,
+         track: [TrackPoint] = [], checklistCompleted: [String] = [],
+         amendments: [RouteAmendment] = [], notes: String = "") {
+        self.id = id
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.aircraftID = aircraftID
+        self.aircraftName = aircraftName
+        self.registration = registration
+        self.plannedPoints = plannedPoints
+        self.plannedCruiseFT = plannedCruiseFT
+        self.plannedDistanceNM = plannedDistanceNM
+        self.plannedTimeMinutes = plannedTimeMinutes
+        self.plannedFuelGallons = plannedFuelGallons
+        self.fuelOnBoardAtStartGal = fuelOnBoardAtStartGal
+        self.track = track
+        self.checklistCompleted = checklistCompleted
+        self.amendments = amendments
+        self.notes = notes
+    }
+
     var routeName: String {
         guard let first = plannedPoints.first, let last = plannedPoints.last else { return "Flight" }
         return plannedPoints.count == 1 ? first.ident : "\(first.ident) → \(last.ident)"
@@ -310,13 +369,51 @@ final class FlightLog: ObservableObject {
         load()
     }
 
+    /// True when the file held records that could not be read. Saving is blocked
+    /// while it is set, so a decode problem cannot turn into data loss.
+    private(set) var loadFailed = false
+
     func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([FlightRecord].self, from: data) else { return }
-        records = decoded.sorted { $0.startedAt > $1.startedAt }
+        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return }
+
+        if let decoded = try? JSONDecoder().decode([FlightRecord].self, from: data) {
+            records = decoded.sorted { $0.startedAt > $1.startedAt }
+            loadFailed = false
+            return
+        }
+
+        // Whole-array decoding failed, so try record by record: one unreadable
+        // entry should cost that entry, not the entire logbook.
+        var recovered: [FlightRecord] = []
+        var lost = 0
+        if let raw = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+            for element in raw {
+                guard let bytes = try? JSONSerialization.data(withJSONObject: element),
+                      let record = try? JSONDecoder().decode(FlightRecord.self, from: bytes) else {
+                    lost += 1
+                    continue
+                }
+                recovered.append(record)
+            }
+        } else {
+            lost = 1
+        }
+
+        records = recovered.sorted { $0.startedAt > $1.startedAt }
+        loadFailed = lost > 0
+        if loadFailed {
+            // Keep the original bytes before anything can overwrite them.
+            let backup = fileURL.deletingLastPathComponent()
+                .appendingPathComponent("AeroMaps-flights-unreadable.json")
+            try? data.write(to: backup, options: .atomic)
+        }
     }
 
     func save() {
+        // Never write over a file whose contents could not be read. Without this,
+        // an empty in-memory list — the result of a failed load — would silently
+        // replace every flight on disk the next time anything was recorded.
+        guard !loadFailed else { return }
         guard let data = try? JSONEncoder().encode(records) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }

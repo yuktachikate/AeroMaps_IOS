@@ -128,4 +128,40 @@ check("a real detour does not read as stationary", !rec.neverMoved)
 var emptyRec = rec; emptyRec.track = []
 check("empty track is not 'never moved'", !emptyRec.neverMoved)
 
+print("\nLogbook schema tolerance")
+// A record written before `registration` existed must still decode. This is the
+// exact shape that silently emptied the log.
+let v1 = """
+[{"id":"11111111-1111-1111-1111-111111111111","startedAt":760000000,
+  "aircraftID":"C172","aircraftName":"Cessna 172 Skyhawk",
+  "plannedPoints":[],"plannedCruiseFT":6500,"plannedDistanceNM":100,
+  "plannedTimeMinutes":50,"plannedFuelGallons":7,"fuelOnBoardAtStartGal":40,
+  "track":[],"checklistCompleted":[],"amendments":[],"notes":"pre-registration record"}]
+"""
+if let old = try? JSONDecoder().decode([FlightRecord].self, from: Data(v1.utf8)) {
+    check("a record predating 'registration' still decodes", old.count == 1)
+    check("missing field falls back to empty", old.first?.registration == "")
+    check("the rest of the record survives", old.first?.notes == "pre-registration record")
+} else {
+    check("a record predating 'registration' still decodes", false)
+}
+
+// And a record missing many fields should still yield something usable.
+let sparse = """
+[{"startedAt":760000000}]
+"""
+if let thin = try? JSONDecoder().decode([FlightRecord].self, from: Data(sparse.utf8)) {
+    check("a minimal record decodes", thin.count == 1)
+    check("unknown aircraft is labelled, not blank", thin.first?.aircraftName == "Unknown aircraft")
+} else {
+    check("a minimal record decodes", false)
+}
+
+// A record with no start time is not a record of anything and must be rejected.
+let bad = """
+[{"aircraftName":"C172"}]
+"""
+check("a record with no start time is rejected",
+      (try? JSONDecoder().decode([FlightRecord].self, from: Data(bad.utf8))) == nil)
+
 print("\n\(pass) passed, \(fail) failed")
