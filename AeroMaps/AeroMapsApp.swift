@@ -1041,32 +1041,6 @@ final class MapState: ObservableObject {
         computedPolyline = nil
     }
     
-    func parseSearch() {
-        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !term.isEmpty else { return }
-        
-        // Ranked against the whole database, biased toward the map's current area so
-        // a common name resolves to the field nearby rather than one continents away.
-        let targetAirport = airports[term]
-            ?? airports.search(term, near: camera.centerCoordinate, limit: 1).first
-        
-        if let airport = targetAirport {
-            withAnimation(.easeInOut(duration: 1.0)) {
-                camera = MKMapCamera(
-                    lookingAtCenter: airport.coordinate,
-                    fromDistance: 40000,
-                    pitch: 0,
-                    heading: 0
-                )
-            }
-            shouldCenterCamera = true
-            selectedAirport = airport
-            showingAirportDetail = true
-        }
-        
-        searchText = ""
-    }
-    
     /// Steps the map camera in or out.
     ///
     /// Pinch is awkward on a simulator trackpad and worse in a cockpit — one hand

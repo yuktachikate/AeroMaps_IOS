@@ -11,12 +11,55 @@ struct BottomSheet: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isExpanded = false
+    /// The one search model for the app. It lives here, at the top of the sheet,
+    /// rather than inside the route builder — see UnifiedSearch.swift for why there
+    /// used to be two of these and why the capable one being the hidden one was the
+    /// problem.
+    @StateObject private var search = WaypointSearchModel()
+    /// The result the pilot tapped into, if any. Non-nil swaps the results list for
+    /// the card, which is the "look at what you found before routing to it" beat.
+    @State private var selection: WaypointSuggestion?
+    /// The search field's text, deliberately local rather than on MapState.
+    ///
+    /// It lived on MapState and typing a single character therefore published to
+    /// every view observing it — the whole sheet, the nearby-airports strip and its
+    /// spatial query, and MapView's `updateUIView`, which touches MKMapView. That is
+    /// the same trap the Save Route dialog documents a few files over: a text field
+    /// bound to shared observable state re-runs the map on every keystroke, and
+    /// typing "KSFO" stalls on the K.
+    @State private var searchText = ""
 
     private var layout: PlanningLayout {
         PlanningLayout(horizontal: horizontalSizeClass, vertical: verticalSizeClass)
     }
 
     private var isOpen: Bool { isExpanded }
+
+    /// Swipe to open and close the sheet.
+    ///
+    /// Declared once and attached with `simultaneousGesture` to the surfaces a
+    /// finger actually lands on, rather than relying on the plain `.gesture` on the
+    /// sheet as a whole. That alone did not work: when the sheet is collapsed
+    /// almost every pixel of it belongs to a child view that wins the gesture
+    /// outright — the search field is a UITextField carrying its own pan
+    /// recognisers, and the layer chips are a horizontal UIScrollView, which claims
+    /// vertical pans as well as horizontal ones. A parent `.gesture` loses to both,
+    /// so the only draggable area left was a few points of padding between them.
+    ///
+    /// `simultaneousGesture` runs alongside those recognisers instead of competing
+    /// with them, and a tap never travels far enough to trigger it, so tapping into
+    /// the search field still focuses it.
+    private var sheetDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onEnded { value in
+                if value.translation.height < -20 {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isExpanded = true }
+                } else if value.translation.height > 20 {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isExpanded = false }
+                    hideKeyboard()
+                }
+            }
+    }
     
     /// Matches the search bar's radius, so the sheet and the first control inside
     /// it agree. Only the top corners round: the sheet is anchored to the bottom of
@@ -48,137 +91,106 @@ struct BottomSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    var searchResults: [Airport] {
-        let query = mapState.searchText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !query.isEmpty else { return [] }
-        
-        let localMatches = mapState.airports.search(query, near: mapState.camera.centerCoordinate, limit: 12)
-        
-        var combined = mapState.liveSearchResults
-        for localItem in localMatches {
-            if !combined.contains(where: { $0.icao == localItem.icao || $0.name == localItem.name }) {
-                combined.append(localItem)
-            }
-        }
-        
-        return combined.sorted(by: { $0.name < $1.name })
+    /// What the search field asks for, phrased for what it will do with the answer.
+    /// Mid-route it is adding a stop, not starting over.
+    private var searchPlaceholder: String {
+        mapState.route.waypoints.isEmpty
+            ? "Search airports, places, or coordinates"
+            : "Add a stop — ident, place, or coordinates"
     }
-    
+
+    private var currentRegion: MKCoordinateRegion {
+        MKCoordinateRegion(center: mapState.camera.centerCoordinate,
+                           span: MKCoordinateSpan(latitudeDelta: 2, longitudeDelta: 2))
+    }
+
+    private func runSearch(_ text: String) {
+        selection = nil
+        // Only the debounced model is driven here. The global airport lookup used to
+        // run on every keystroke too, and it sets `isSearchingLive` immediately —
+        // a second full re-render per character on top of the one above. It now runs
+        // from inside the model's debounce instead, via `onDebounced`.
+        search.update(query: text,
+                      airports: mapState.airports,
+                      liveResults: mapState.liveSearchResults,
+                      near: currentRegion)
+    }
+
+    /// Adds a result to the route and gets the search out of the way, because the
+    /// next thing the pilot does is look at the route, not at more results.
+    private func add(_ suggestion: WaypointSuggestion) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            mapState.appendWaypoint(suggestion.makeWaypoint())
+        }
+        selection = nil
+        searchText = ""
+        search.clear()
+        hideKeyboard()
+        // The route is only worth framing once there is a leg to frame.
+        if mapState.route.waypoints.count >= 2 { mapState.zoomToRoute() }
+        // A first waypoint means planning has started, so show the planning surface.
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isExpanded = true }
+    }
+
     var body: some View {
         VStack(spacing: 10) {
-            Button(action: {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
+            // The grab area: the grabber and the search bar together. Treated as one
+            // surface so a swipe starting anywhere along the top of the sheet opens
+            // it, which is where a thumb naturally lands.
+            VStack(spacing: 10) {
+                Button(action: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color.white.opacity(0.6))
+                        .frame(width: 40, height: 5)
+                        .padding(.top, 8)
+                        // Five points is a fine target to look at and a poor one to
+                        // hit; the tappable area is enlarged without moving anything.
+                        .contentShape(Rectangle().inset(by: -12))
                 }
-            }) {
-                RoundedRectangle(cornerRadius: 2.5)
-                    .fill(Color.white.opacity(0.6))
-                    .frame(width: 40, height: 5)
-                    .padding(.top, 8)
+
+                // 1. Search Bar (At top of bottom sheet, like Apple Maps)
+                SearchBar(
+                    text: $searchText,
+                    isExpanded: $isExpanded,
+                    placeholder: searchPlaceholder,
+                    onSearch: {
+                        // Enter takes the top hit. Typing an ident and pressing go is the
+                        // fastest path there is, and it should not require aiming at a row.
+                        if let first = search.suggestions.first { add(first) }
+                    }
+                )
+                .padding(.horizontal, 14)
             }
-            
-            // 1. Search Bar (At top of bottom sheet, like Apple Maps)
-            SearchBar(
-                text: $mapState.searchText,
-                isExpanded: $isExpanded,
-                onSearch: { mapState.parseSearch() }
-            )
-            .padding(.horizontal, 14)
+            .contentShape(Rectangle())
+            .simultaneousGesture(sheetDrag)
             
             // Route status, from the first dropped point through to in-flight.
             if !mapState.route.waypoints.isEmpty {
                 ConfirmFlightPlanBanner(mapState: mapState, isExpanded: $isExpanded)
             }
             
-            // Live Airport & Code Search Autocomplete Dropdown
-            if !mapState.searchText.isEmpty {
-                VStack(spacing: 4) {
-                    if mapState.isSearchingLive && searchResults.isEmpty {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .cyan))
-                            Text("Searching global airport database...")
-                                .font(.subheadline)
-                                .foregroundColor(.cyan)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    } else if searchResults.isEmpty {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.secondary)
-                            Text("No airports matching '\(mapState.searchText)'")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    } else {
-                        ScrollView(.vertical, showsIndicators: true) {
-                            VStack(spacing: 4) {
-                                ForEach(searchResults) { airport in
-                                    Button(action: {
-                                        withAnimation(.easeInOut(duration: 0.8)) {
-                                            mapState.camera = MKMapCamera(
-                                                lookingAtCenter: airport.coordinate,
-                                                fromDistance: 45_000,
-                                                pitch: 0,
-                                                heading: 0
-                                            )
-                                            mapState.shouldCenterCamera = true
-                                        }
-                                        mapState.selectedAirport = airport
-                                        mapState.showingAirportDetail = true
-                                        mapState.searchText = ""
-                                        hideKeyboard()
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            Text(airport.icao)
-                                                .font(.headline)
-                                                .fontWeight(.bold)
-                                                .foregroundColor(.white)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.blue.opacity(0.5))
-                                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                            
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(airport.name)
-                                                    .font(.subheadline)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundColor(.white)
-             
-                                                    .lineLimit(1)
-                                                Text("\(airport.city), \(airport.state)")
-                                                    .font(.caption)
-                                                    .foregroundColor(.white.opacity(0.7))
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption)
-                                                .foregroundColor(.white.opacity(0.5))
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color.white.opacity(0.08))
-                                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 14)
-                        }
-                        .frame(maxHeight: 220)
-                    }
-                }
+            // Results, or the card for whichever result was tapped. One list, and
+            // it carries airports, places and coordinates rather than airports alone.
+            if let selection {
+                SearchResultCard(mapState: mapState,
+                                 suggestion: selection,
+                                 onAdd: { add(selection) },
+                                 onDismiss: { self.selection = nil })
+                    .padding(.horizontal, 14)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if !searchText.isEmpty {
+                unifiedResults
             }
-            
+
             // 2. Layer Control Pallets (Traffic, Radar, Airspace, FFM Risk)
             LayerControls(mapState: mapState)
                 .padding(.horizontal, 14)
                 .padding(.bottom, isOpen ? 0 : 24)
+                .simultaneousGesture(sheetDrag)
             
             // 3. The planning surface, in the order a route is actually worked:
             //    build it → refine and check it → see what it costs → set up the
@@ -246,29 +258,71 @@ struct BottomSheet: View {
         )
 
         .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: -5)
-        .gesture(
-            DragGesture(minimumDistance: 15)
-                .onEnded { value in
-                    if value.translation.height < -20 {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            isExpanded = true
-                        }
-                    } else if value.translation.height > 20 {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            isExpanded = false
-                        }
-                        hideKeyboard()
-                    }
-                }
-        )
+        // Catches swipes on the sheet's own background — the gaps between controls.
+        // Deliberately the low-priority form: when the sheet is open its content
+        // scrolls vertically, and a simultaneous gesture here would drive the sheet
+        // and the scroll view at the same time.
+        //
+        // No `.contentShape(Rectangle())` here on purpose. It would make the sheet's
+        // whole frame — transparent regions included — swallow touches that used to
+        // fall through to the map behind it, which is a large area to make dead for
+        // the sake of a gesture the grab area already handles.
+        .gesture(sheetDrag)
         .ignoresSafeArea(edges: .bottom)
-        .onChange(of: mapState.searchText) { newValue in
-            mapState.performLiveAirportSearch(query: newValue)
+        .onChange(of: searchText) { newValue in
+            runSearch(newValue)
+        }
+        .onAppear {
+            // Deferred to the model's debounce so it costs one lookup per pause
+            // rather than one per character.
+            search.onDebounced = { [weak mapState] query in
+                mapState?.performLiveAirportSearch(query: query)
+            }
         }
         // Dropping a waypoint deliberately does NOT open the sheet. Placing points
         // by press-and-hold is a map task, and expanding over the map interrupts it.
         // The status banner reports what has been dropped; the pilot swipes up (or
         // taps "Plan") when they are ready to work on altitudes and tools.
+    }
+
+    /// The single results list: airports from the bundled database, places from the
+    /// map, and a coordinate if what was typed parses as one.
+    @ViewBuilder
+    private var unifiedResults: some View {
+        VStack(spacing: 4) {
+            if search.suggestions.isEmpty {
+                HStack(spacing: 10) {
+                    if search.isSearching {
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .cyan))
+                        Text("Searching…")
+                            .font(.subheadline).foregroundColor(.cyan)
+                    } else {
+                        Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                        Text("Nothing matching '\(searchText)'")
+                            .font(.subheadline).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 4) {
+                        ForEach(search.suggestions) { suggestion in
+                            SearchResultRow(
+                                suggestion: suggestion,
+                                onOpen: {
+                                    withAnimation(.easeOut(duration: 0.2)) { selection = suggestion }
+                                    hideKeyboard()
+                                },
+                                onAdd: { add(suggestion) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                }
+                .frame(maxHeight: 240)
+            }
+        }
     }
 }
 

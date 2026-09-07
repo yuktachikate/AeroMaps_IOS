@@ -1,165 +1,6 @@
 import SwiftUI
 import MapKit
 
-// MARK: - Suggestions
-
-/// A candidate the entry field can turn into a waypoint. Coordinates resolve
-/// locally and instantly; airports come from the bundled table plus the live
-/// lookup; places come from MapKit's local search.
-enum WaypointSuggestion: Identifiable {
-    case airport(Airport)
-    case coordinate(CLLocationCoordinate2D)
-    case place(MKMapItem)
-
-    var id: String {
-        switch self {
-        case .airport(let a):    return "apt-\(a.icao)"
-        case .coordinate(let c): return "crd-\(c.latitude),\(c.longitude)"
-        case .place(let item):   return "plc-\(item.name ?? "")-\(item.placemark.coordinate.latitude)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .airport(let a):    return a.icao
-        case .coordinate(let c): return Waypoint.formatCoordinate(c)
-        case .place(let item):   return item.name ?? "Place"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .airport(let a):
-            let place = [a.city, a.state].filter { !$0.isEmpty }.joined(separator: ", ")
-            return place.isEmpty ? a.name : "\(a.name) · \(place)"
-        case .coordinate(let c):
-            return String(format: "%.5f, %.5f", c.latitude, c.longitude)
-        case .place(let item):
-            return item.placemark.title ?? Waypoint.formatCoordinate(item.placemark.coordinate)
-        }
-    }
-
-    var iconName: String {
-        switch self {
-        case .airport:    return WaypointKind.airport.symbolName
-        case .coordinate: return WaypointKind.coordinate.symbolName
-        case .place:      return WaypointKind.place.symbolName
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .airport:    return .cyan
-        case .coordinate: return .orange
-        case .place:      return .purple
-        }
-    }
-
-    func makeWaypoint() -> Waypoint {
-        switch self {
-        case .airport(let a):
-            return Waypoint(airport: a)
-        case .coordinate(let c):
-            return Waypoint(ident: Waypoint.formatCoordinate(c), name: "Coordinate",
-                            coordinate: c, kind: .coordinate)
-        case .place(let item):
-            let name = item.name ?? "Place"
-            return Waypoint(ident: name, name: item.placemark.title ?? name,
-                            coordinate: item.placemark.coordinate, kind: .place)
-        }
-    }
-}
-
-/// Debounced lookup behind the "add a waypoint" field.
-///
-/// Coordinates are parsed synchronously so a typed lat/long offers itself
-/// immediately; airports and places resolve as results arrive.
-final class WaypointSearchModel: ObservableObject {
-    @Published var query: String = ""
-    @Published private(set) var suggestions: [WaypointSuggestion] = []
-    @Published private(set) var isSearching = false
-
-    private var placeSearch: MKLocalSearch?
-    /// Where the pilot is looking, used to rank results by proximity.
-    private var nearCoordinate: CLLocationCoordinate2D?
-    private var pendingWork: DispatchWorkItem?
-
-    func update(query: String, airports: AirportCatalog, liveResults: [Airport], near region: MKCoordinateRegion?) {
-        self.query = query
-        nearCoordinate = region?.center
-        pendingWork?.cancel()
-        placeSearch?.cancel()
-
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2 else {
-            suggestions = []
-            isSearching = false
-            return
-        }
-
-        // A typed coordinate resolves instantly — it is pure parsing, no scan.
-        var immediate: [WaypointSuggestion] = []
-        if let coord = CoordinateParser.parse(trimmed) {
-            immediate.append(.coordinate(coord))
-        }
-        // The airport scan is debounced with the place search rather than run on
-        // every keystroke. Scanning ~29,000 records per character was enough to
-        // make typing an ident stutter.
-        suggestions = immediate + suggestions.filter {
-            if case .airport = $0 { return true } else { return false }
-        }
-        isSearching = true
-
-        // Places lag behind a short debounce so typing does not fire a request per key.
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            let airportHits = self.matchingAirports(trimmed, airports: airports, live: liveResults)
-                .prefix(8).map(WaypointSuggestion.airport)
-            let base = immediate + airportHits
-            self.suggestions = base
-            self.runPlaceSearch(trimmed, region: region, keeping: base)
-        }
-        pendingWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: work)
-    }
-
-    private func matchingAirports(_ query: String, airports: AirportCatalog, live: [Airport]) -> [Airport] {
-        // The catalog ranks exact idents first, then prefixes, then names — with
-        // distance from the map's centre breaking ties, so a local field wins over a
-        // similarly-named one on another continent.
-        var out = airports.search(query, near: nearCoordinate, limit: 8)
-        var seen = Set(out.map(\.icao))
-        // Unverified map hits fill in behind anything the database knows.
-        for airport in live where seen.insert(airport.icao).inserted { out.append(airport) }
-        return out
-    }
-
-    private func runPlaceSearch(_ query: String, region: MKCoordinateRegion?, keeping existing: [WaypointSuggestion]) {
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = query
-        if let region { request.region = region }
-
-        let search = MKLocalSearch(request: request)
-        placeSearch = search
-        search.start { [weak self] response, _ in
-            DispatchQueue.main.async {
-                guard let self, self.query.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
-                let places = (response?.mapItems ?? []).prefix(5).map(WaypointSuggestion.place)
-                self.suggestions = existing + places
-                self.isSearching = false
-            }
-        }
-    }
-
-    func clear() {
-        pendingWork?.cancel()
-        placeSearch?.cancel()
-        query = ""
-        suggestions = []
-        isSearching = false
-    }
-}
-
 // MARK: - Route builder
 
 /// The route-editing surface inside the bottom sheet: add waypoints by ident,
@@ -169,22 +10,13 @@ struct RouteBuilderView: View {
     @ObservedObject var mapState: MapState
     /// Hidden when the host already titles the section, as the flight planner does.
     var showsHeader: Bool = true
-    @StateObject private var search = WaypointSearchModel()
-    @State private var entryText: String = ""
     @State private var routeStringText: String = ""
     @State private var showRouteStringField = false
     @State private var routeStringError: String?
-    @FocusState private var entryFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if showsHeader { header }
-
-            entryField
-
-            if !search.suggestions.isEmpty {
-                suggestionList
-            }
 
             if showRouteStringField {
                 routeStringEntry
@@ -240,115 +72,6 @@ struct RouteBuilderView: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-
-    // MARK: Entry
-
-    private var entryField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus.magnifyingglass")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.6))
-
-            TextField("Airport, coordinates, or place", text: $entryText)
-                .textFieldStyle(.plain)
-                .foregroundColor(.white)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.characters)
-                .focused($entryFocused)
-                .submitLabel(.go)
-                .onSubmit { commitTopSuggestion() }
-                .onChange(of: entryText) { _, value in
-                    mapState.performLiveAirportSearch(query: value)
-                    search.update(query: value,
-                                  airports: mapState.airports,
-                                  liveResults: mapState.liveSearchResults,
-                                  near: currentRegion)
-                }
-
-            if !entryText.isEmpty {
-                Button {
-                    entryText = ""
-                    search.clear()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-            }
-
-            Button(action: commitTopSuggestion) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title3)
-                    .foregroundColor(canCommit ? .blue : .white.opacity(0.25))
-            }
-            .buttonStyle(.plain)
-            .disabled(!canCommit)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(entryFocused ? Color.blue.opacity(0.7) : Color.white.opacity(0.12), lineWidth: 1)
-        )
-    }
-
-    private var canCommit: Bool { !search.suggestions.isEmpty }
-
-    private func commitTopSuggestion() {
-        guard let first = search.suggestions.first else { return }
-        add(first)
-    }
-
-    private func add(_ suggestion: WaypointSuggestion) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            mapState.appendWaypoint(suggestion.makeWaypoint())
-        }
-        entryText = ""
-        search.clear()
-        entryFocused = false
-        hideKeyboard()
-        if mapState.route.waypoints.count >= 2 { mapState.zoomToRoute() }
-    }
-
-    private var suggestionList: some View {
-        VStack(spacing: 4) {
-            ForEach(search.suggestions) { suggestion in
-                Button { add(suggestion) } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: suggestion.iconName)
-                            .font(.subheadline)
-                            .foregroundColor(suggestion.tint)
-                            .frame(width: 22)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(suggestion.title)
-                                .font(.subheadline).fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            Text(suggestion.subtitle)
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.6))
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "plus")
-                            .font(.caption).fontWeight(.bold)
-                            .foregroundColor(.blue)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .transition(.opacity)
     }
 
     // MARK: Pasted route string
@@ -412,7 +135,7 @@ struct RouteBuilderView: View {
         HStack(spacing: 10) {
             Image(systemName: "hand.tap")
                 .foregroundColor(.white.opacity(0.5))
-            Text("Type above, or press and hold anywhere on the map to drop a waypoint.")
+            Text("Search at the top of the sheet, or press and hold anywhere on the map to drop a waypoint.")
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.6))
             Spacer()

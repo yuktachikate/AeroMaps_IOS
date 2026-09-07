@@ -2337,6 +2337,9 @@ extension View {
 struct SearchBar: View {
     @Binding var text: String
     @Binding var isExpanded: Bool
+    /// Set by the caller, because this one field does different work depending on
+    /// whether a route is under way. See UnifiedSearch.swift.
+    var placeholder: String = "Search airports, places, or coordinates"
     let onSearch: () -> Void
     @FocusState private var isTextFieldFocused: Bool
     
@@ -2345,7 +2348,7 @@ struct SearchBar: View {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.white.opacity(0.7))
             
-            TextField("Search airports, routes...", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(PlainTextFieldStyle())
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
