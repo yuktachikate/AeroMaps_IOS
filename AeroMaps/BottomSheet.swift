@@ -231,9 +231,6 @@ struct BottomSheet: View {
                                 .padding(.horizontal, 14)
                         }
 
-                        LogbookRow(mapState: mapState)
-                            .padding(.horizontal, 14)
-
                         SecondaryToolsView(mapState: mapState)
                             .padding(.horizontal, 16)
 
@@ -488,46 +485,6 @@ struct AircraftCard: View {
 
 /// Briefing and reference screens. Deliberately smaller and further down than the
 /// refine bar — these are things a pilot reaches for, not the main flow.
-/// Previous flights, given a row of its own.
-///
-/// This was a chip inside the horizontally scrolling briefing strip, which meant
-/// finding it required expanding the sheet and then scrolling sideways past six
-/// other tools — so the flight log looked, reasonably, like it had never been
-/// built. It states how many flights are recorded, which is also the answer to
-/// "is this thing actually saving anything".
-struct LogbookRow: View {
-    @ObservedObject var mapState: MapState
-
-    private var count: Int { mapState.flightLog.records.count }
-
-    var body: some View {
-        Button { mapState.activeTool = .logbook } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "book.closed.fill")
-                    .font(.subheadline)
-                    .foregroundColor(.blue)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Previous flights")
-                        .font(.subheadline).fontWeight(.semibold)
-                        .foregroundColor(.white)
-                    Text(count == 0
-                         ? "No flights recorded yet"
-                         : "\(count) flight\(count == 1 ? "" : "s") · \(String(format: "%.1f", mapState.flightLog.totalHours)) hours")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption).foregroundColor(.white.opacity(0.4))
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
-
 struct SecondaryToolsView: View {
     @ObservedObject var mapState: MapState
 

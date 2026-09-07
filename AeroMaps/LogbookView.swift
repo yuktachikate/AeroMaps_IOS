@@ -8,10 +8,23 @@ import MapKit
 /// changes made in the air and why, and which checklist items were ticked.
 struct LogbookView: View {
     @ObservedObject var mapState: MapState
+    /// Observed directly, not through MapState.
+    ///
+    /// `flightLog` is a plain `let` on MapState, so mutating it published nothing:
+    /// deleting a flight removed it from memory and from disk and the list carried
+    /// on showing it, which read as deletion being broken. Watching the log itself
+    /// is also narrower than forwarding it through MapState, which would re-render
+    /// every view in the app whenever a flight was recorded.
+    @ObservedObject private var log: FlightLog
     @Environment(\.dismiss) private var dismiss
     @State private var selected: FlightRecord?
 
-    private var records: [FlightRecord] { mapState.flightLog.records }
+    init(mapState: MapState) {
+        self.mapState = mapState
+        self.log = mapState.flightLog
+    }
+
+    private var records: [FlightRecord] { log.records }
 
     /// Flights bucketed by age, newest bucket first.
     ///
@@ -53,7 +66,7 @@ struct LogbookView: View {
                             HStack {
                                 summary("\(records.filter(\.isComplete).count)", "flights")
                                 Divider()
-                                summary(String(format: "%.1f", mapState.flightLog.totalHours), "hours")
+                                summary(String(format: "%.1f", log.totalHours), "hours")
                                 Divider()
                                 // Jitter from a stationary recording would otherwise
                                 // be totalled up as distance flown.
@@ -75,7 +88,7 @@ struct LogbookView: View {
                                 }
                                 .onDelete { indexSet in
                                     for index in indexSet {
-                                        mapState.flightLog.delete(id: group.records[index].id)
+                                        log.delete(id: group.records[index].id)
                                     }
                                 }
                             }
@@ -93,7 +106,7 @@ struct LogbookView: View {
             }
             .sheet(item: $selected) { record in
                 LoggedFlightDetailView(record: record,
-                                       onDelete: { mapState.flightLog.delete(id: record.id) })
+                                       onDelete: { log.delete(id: record.id) })
             }
             // Arriving straight from "View summary" opens that flight rather than
             // making the pilot pick it out of the list they just came from.
