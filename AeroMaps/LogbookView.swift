@@ -13,6 +13,35 @@ struct LogbookView: View {
 
     private var records: [FlightRecord] { mapState.flightLog.records }
 
+    /// Flights bucketed by age, newest bucket first.
+    ///
+    /// The buckets do not overlap — a flight lands in exactly one — and empty ones
+    /// are dropped rather than shown as headings with nothing under them.
+    private var groups: [(title: String, records: [FlightRecord])] {
+        let now = Date()
+        let day = 24.0 * 3600
+        // Ordered from newest to oldest; the first bucket a flight fits is the one
+        // it belongs to, so the upper bound is all that needs stating.
+        let buckets: [(String, TimeInterval)] = [
+            ("Today", day),
+            ("Last 7 days", 7 * day),
+            ("Last 30 days", 30 * day),
+            ("Last 12 months", 365 * day)
+        ]
+        var remaining = records.sorted { $0.startedAt > $1.startedAt }
+        var out: [(String, [FlightRecord])] = []
+
+        for (title, maxAge) in buckets {
+            let matched = remaining.filter { now.timeIntervalSince($0.startedAt) < maxAge }
+            guard !matched.isEmpty else { continue }
+            out.append((title, matched))
+            let taken = Set(matched.map(\.id))
+            remaining.removeAll { taken.contains($0.id) }
+        }
+        if !remaining.isEmpty { out.append(("Earlier", remaining)) }
+        return out
+    }
+
     var body: some View {
         NavigationView {
             Group {
@@ -26,18 +55,34 @@ struct LogbookView: View {
                                 Divider()
                                 summary(String(format: "%.1f", mapState.flightLog.totalHours), "hours")
                                 Divider()
-                                summary(String(format: "%.0f", records.reduce(0) { $0 + $1.actualDistanceNM }), "NM")
+                                // Jitter from a stationary recording would otherwise
+                                // be totalled up as distance flown.
+                                summary(String(format: "%.0f", records.filter { !$0.neverMoved }
+                                                .reduce(0) { $0 + $1.actualDistanceNM }), "NM")
                             }
                             .padding(.vertical, 4)
                         }
 
-                        ForEach(records) { record in
-                            Button { selected = record } label: { row(record) }
-                                .buttonStyle(.plain)
+                        // Grouped by age, and a period with no flights in it is not
+                        // rendered at all — an empty "Last 7 days" heading is just a
+                        // reminder that you have not flown, which is not what a
+                        // logbook is for.
+                        ForEach(groups, id: \.title) { group in
+                            Section(group.title) {
+                                ForEach(group.records) { record in
+                                    Button { selected = record } label: { row(record) }
+                                        .buttonStyle(.plain)
+                                }
+                                .onDelete { indexSet in
+                                    for index in indexSet {
+                                        mapState.flightLog.delete(id: group.records[index].id)
+                                    }
+                                }
+                            }
                         }
-                        .onDelete { indexSet in
-                            for index in indexSet { mapState.flightLog.delete(id: records[index].id) }
-                        }
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .primaryAction) { EditButton() }
                     }
                 }
             }
@@ -46,7 +91,10 @@ struct LogbookView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
             }
-            .sheet(item: $selected) { LoggedFlightDetailView(record: $0) }
+            .sheet(item: $selected) { record in
+                LoggedFlightDetailView(record: record,
+                                       onDelete: { mapState.flightLog.delete(id: record.id) })
+            }
             // Arriving straight from "View summary" opens that flight rather than
             // making the pilot pick it out of the list they just came from.
             .onAppear {
@@ -113,7 +161,13 @@ struct LogbookView: View {
 /// the live-traffic FlightDetailView, which is a different thing entirely.
 struct LoggedFlightDetailView: View {
     let record: FlightRecord
+    /// Supplied so a flight can be deleted from the record itself rather than only
+    /// by swiping a row in the list behind it.
+    var onDelete: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
+    @State private var showPlanned = true
+    @State private var showFlown = true
+    @State private var confirmingDelete = false
 
     var body: some View {
         NavigationView {
@@ -121,7 +175,19 @@ struct LoggedFlightDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if record.plannedPoints.count >= 2 || record.track.count >= 2 {
                         VStack(spacing: 6) {
-                            FlightTrackMap(record: record).frame(height: 240)
+                            FlightTrackMap(record: record,
+                                           showPlanned: showPlanned,
+                                           showFlown: showFlown)
+                                .frame(height: 240)
+                            // Toggles rather than a fixed pair of lines: on a route
+                            // that followed the plan closely the two sit on top of
+                            // each other, and being able to switch one off is the
+                            // only way to see what is underneath.
+                            HStack(spacing: 8) {
+                                layerToggle("Planned", isOn: $showPlanned, tint: .blue)
+                                layerToggle("Flown", isOn: $showFlown, tint: .green)
+                                Spacer()
+                            }
                             trackLegend
                         }
                     }
@@ -129,13 +195,15 @@ struct LoggedFlightDetailView: View {
                     card("Planned vs flown", "chart.line.uptrend.xyaxis") {
                         comparison("Distance",
                                    String(format: "%.0f NM", record.plannedDistanceNM),
-                                   String(format: "%.0f NM", record.actualDistanceNM))
+                                   record.neverMoved ? "did not move"
+                                                     : String(format: "%.0f NM", record.actualDistanceNM))
                         comparison("Time",
                                    formatted(record.plannedTimeMinutes * 60),
                                    formatted(record.duration))
                         let deviation = record.deviation
                         comparison("Deviation from track", "—",
-                                   String(format: "%.1f NM max · %.1f NM mean", deviation.max, deviation.mean))
+                                   record.neverMoved ? "n/a — never left the ground"
+                                                     : String(format: "%.1f NM max · %.1f NM mean", deviation.max, deviation.mean))
                         comparison("Max altitude",
                                    "\(record.plannedCruiseFT.formatted()) ft planned",
                                    record.maxAltitudeFT > 0 ? "\(Int(record.maxAltitudeFT).formatted()) ft" : "—")
@@ -222,7 +290,22 @@ struct LoggedFlightDetailView: View {
             }
             .navigationTitle(record.routeName)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                if onDelete != nil {
+                    ToolbarItem(placement: .destructiveAction) {
+                        Button(role: .destructive) { confirmingDelete = true } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("Delete this flight?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button("Delete flight", role: .destructive) { onDelete?(); dismiss() }
+                Button("Keep", role: .cancel) { }
+            } message: {
+                Text("The track, notes and checklist for this flight are removed from the device. This cannot be undone.")
+            }
         }
     }
 
@@ -241,6 +324,9 @@ struct LoggedFlightDetailView: View {
             if record.track.count < 2 {
                 Text("No track recorded for this flight — the route is shown alone.")
                     .font(.caption2).foregroundColor(.secondary)
+            } else if record.neverMoved {
+                Text("Recorded without moving — the track is a single point where the device sat, so there is no path to compare against the plan.")
+                    .font(.caption2).foregroundColor(.secondary)
             } else if deviation.max < FlightTrackMap.divergenceNM {
                 Text(String(format: "Stayed within %.1f NM of the plan throughout.", deviation.max))
                     .font(.caption2).foregroundColor(.secondary)
@@ -251,6 +337,21 @@ struct LoggedFlightDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func layerToggle(_ title: String, isOn: Binding<Bool>, tint: Color) -> some View {
+        Button { isOn.wrappedValue.toggle() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
+                    .font(.caption2)
+                Text(title).font(.caption).fontWeight(.medium)
+            }
+            .foregroundColor(isOn.wrappedValue ? tint : .secondary)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background((isOn.wrappedValue ? tint : Color.secondary).opacity(0.14))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func legendKey(_ label: String, _ colour: Color, dashed: Bool) -> some View {
@@ -303,6 +404,8 @@ struct LoggedFlightDetailView: View {
 /// is the question a pilot actually asks afterwards.
 struct FlightTrackMap: UIViewRepresentable {
     let record: FlightRecord
+    var showPlanned = true
+    var showFlown = true
 
     /// Beyond this, a track counts as having left the plan rather than just
     /// wandering within normal tracking tolerance.
@@ -321,21 +424,21 @@ struct FlightTrackMap: UIViewRepresentable {
         map.removeAnnotations(map.annotations)
 
         let planned = record.plannedPoints.map(\.coordinate)
-        if planned.count >= 2 {
+        if planned.count >= 2, showPlanned {
             let line = MKPolyline(coordinates: planned, count: planned.count)
             line.title = "planned"
             map.addOverlay(line)
         }
 
         // Waypoints, so the plan reads as a route rather than a bare line.
-        for point in record.plannedPoints {
+        for point in record.plannedPoints where showPlanned {
             let pin = MKPointAnnotation()
             pin.coordinate = point.coordinate
             pin.title = point.ident
             map.addAnnotation(pin)
         }
 
-        if record.track.count >= 2 {
+        if record.track.count >= 2, showFlown, !record.neverMoved {
             // The track is split into runs of "on plan" and "off plan" so the two
             // can be drawn in different colours. Each run repeats the boundary fix
             // so the line stays continuous across a colour change.
@@ -379,6 +482,14 @@ struct FlightTrackMap: UIViewRepresentable {
                 pin.title = String(format: "%.1f NM off plan", worst.distance)
                 map.addAnnotation(pin)
             }
+        } else if showFlown, record.neverMoved, let first = record.track.first {
+            // A stationary recording is a place, not a path. Drawn as one point and
+            // labelled, rather than as a scribble of GPS jitter that would otherwise
+            // be measured against the route and reported as a huge divergence.
+            let pin = MKPointAnnotation()
+            pin.coordinate = first.coordinate
+            pin.title = "Recorded here — did not move"
+            map.addAnnotation(pin)
         }
 
         // Frame everything drawn, plan included, so a short track does not zoom in
@@ -418,10 +529,13 @@ struct FlightTrackMap: UIViewRepresentable {
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView
                 ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
             view.annotation = annotation
-            let isDeviation = (annotation.title ?? "")?.contains("off plan") == true
-            view.markerTintColor = isDeviation ? .systemOrange : .systemBlue
-            view.glyphImage = UIImage(systemName: isDeviation ? "exclamationmark" : "mappin")
-            view.displayPriority = isDeviation ? .required : .defaultLow
+            let title = (annotation.title ?? "") ?? ""
+            let isDeviation = title.contains("off plan")
+            let isParked = title.contains("did not move")
+            view.markerTintColor = isDeviation ? .systemOrange : (isParked ? .systemGreen : .systemBlue)
+            view.glyphImage = UIImage(systemName: isDeviation ? "exclamationmark"
+                                                 : (isParked ? "figure.stand" : "mappin"))
+            view.displayPriority = (isDeviation || isParked) ? .required : .defaultLow
             return view
         }
     }

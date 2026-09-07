@@ -144,6 +144,24 @@ struct FlightRecord: Codable, Identifiable, Hashable {
 
     var maxAltitudeFT: Double { track.map(\.altitudeFT).max() ?? 0 }
 
+    /// How far the aircraft ever got from where recording started.
+    ///
+    /// Measured from the first fix rather than summed along the track, because GPS
+    /// jitter on a stationary aircraft accumulates into a surprisingly large total
+    /// distance while going nowhere at all.
+    var trackSpreadNM: Double {
+        guard let first = track.first else { return 0 }
+        return track.reduce(0) { max($0, AltitudePlanner.distanceNM(first.coordinate, $1.coordinate)) }
+    }
+
+    /// True when a track exists but the aircraft never left the spot — testing on
+    /// the ground, or a recording started and stopped without flying.
+    ///
+    /// Worth distinguishing, because such a track is a dot sitting wherever the
+    /// device was, and measuring its distance from a planned route would report a
+    /// large and completely meaningless "divergence".
+    var neverMoved: Bool { !track.isEmpty && trackSpreadNM < 0.5 }
+
     /// How far the flight strayed from the planned track, measured as the
     /// perpendicular distance from each fix to the nearest planned leg.
     var deviation: (max: Double, mean: Double) {

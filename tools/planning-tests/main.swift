@@ -111,4 +111,21 @@ check("on-plan track shows ~0 deviation", rec2.deviation.max < 0.2)
 check("on-plan stays below the 2 NM divergence threshold", rec2.deviation.max < 2.0)
 check("detour crosses the 2 NM divergence threshold", dev.max >= 2.0)
 
+print("\nGround testing (no movement)")
+var parked = rec
+// Twenty minutes of fixes from a device sitting on a desk: jitter only.
+parked.track = (0..<240).map { i in
+    TrackPoint(latitude: 37.4 + Double(i % 3) * 0.00012,
+               longitude: -122.1 + Double(i % 5) * 0.00010,
+               altitudeFT: 30, groundSpeedKT: 0,
+               time: Date().addingTimeInterval(Double(i) * 5))
+}
+print(String(format: "  spread %.3f NM, summed track distance %.2f NM",
+             parked.trackSpreadNM, parked.actualDistanceNM))
+check("a stationary device reads as never moved", parked.neverMoved)
+check("spread stays under half a mile", parked.trackSpreadNM < 0.5)
+check("a real detour does not read as stationary", !rec.neverMoved)
+var emptyRec = rec; emptyRec.track = []
+check("empty track is not 'never moved'", !emptyRec.neverMoved)
+
 print("\n\(pass) passed, \(fail) failed")
