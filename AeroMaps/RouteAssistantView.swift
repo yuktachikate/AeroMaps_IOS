@@ -45,7 +45,9 @@ struct RouteAssistantView: View {
                                 notamStatus: mapState.notams.status,
                                 notamCount: mapState.notams.notams.count,
                                 airspace: mapState.airspace,
-                                isStudentPilot: mapState.isStudentPilot)
+                                isStudentPilot: mapState.isStudentPilot,
+                                airports: mapState.airports,
+                                terminalWeather: mapState.aviationWeather.metars)
     }
 
     var body: some View {
@@ -429,13 +431,32 @@ struct RouteAssistantView: View {
     private func apply(_ fix: RouteValidator.Fix) {
         switch fix {
         case .setCruise(let ft):
-            mapState.route.altitudeFT = ft
+            // Clearing the pins that block the new level is the whole point of the
+            // fix. A generated route pins an altitude on every terrain step-up, and
+            // the profile flies pins in preference to the cruise altitude — so
+            // setting cruise alone changed a number that nothing then used, the
+            // warning recomputed from the same pinned profile, and the fix looked
+            // like it had done nothing.
+            //
+            // Only the pins actually in the way are dropped: raising cruise clears
+            // the ones holding the aircraft down, lowering it clears the ones above
+            // the new level. Deliberate step-ups on the other side survive.
+            var plan = mapState.route
+            let raising = ft > plan.altitudeFT
+            for i in plan.waypoints.indices {
+                guard let pin = plan.waypoints[i].plannedAltitudeFT else { continue }
+                if raising ? pin < ft : pin > ft { plan.waypoints[i].plannedAltitudeFT = nil }
+            }
+            plan.altitudeFT = ft
+            // Assigned once: `route` recomputes the whole profile in its didSet, so
+            // mutating it per waypoint would recompute it once per waypoint.
+            mapState.route = plan
         case .setWaypointAltitude(let id, let ft):
             mapState.setWaypointAltitude(id: id, altitudeFT: ft)
         case .clearWaypointOverrides:
-            for i in mapState.route.waypoints.indices {
-                mapState.route.waypoints[i].plannedAltitudeFT = nil
-            }
+            var plan = mapState.route
+            for i in plan.waypoints.indices { plan.waypoints[i].plannedAltitudeFT = nil }
+            mapState.route = plan
         }
     }
 

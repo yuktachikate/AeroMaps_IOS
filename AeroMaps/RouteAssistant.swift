@@ -373,6 +373,41 @@ enum RouteValidator {
     }
 
     /// Point a fraction of the way along a leg, for airspace sampling.
+    /// The radio call the airspace actually requires, with a frequency where the
+    /// database has one.
+    ///
+    /// "Two-way radio communication must be established" is the regulation, not a
+    /// plan. In the air the useful form is which facility, on what frequency — so
+    /// the published frequencies for the field the airspace belongs to are pulled in
+    /// where they can be matched, and the requirement is stated plainly where they
+    /// cannot. Nothing is guessed: an unmatched airspace says so.
+    static func radioGuidance(for volume: AirspaceVolume,
+                              route: RoutePlan,
+                              airports: AirportCatalog?) -> String {
+        guard let airports else { return "" }
+        // Match the volume to a field on the route by containment: the Class D at
+        // San Carlos belongs to San Carlos, and that is the tower to call.
+        let onRoute = route.waypoints.compactMap { waypoint -> Airport? in
+            guard let ident = waypoint.airportICAO, let airport = airports[ident],
+                  airport.isVerified, volume.contains(airport.coordinate) else { return nil }
+            return airport
+        }
+        guard let airport = onRoute.first else { return "" }
+
+        // Approach/tower first: those are the ones that issue a clearance or
+        // establish two-way communication.
+        let wanted = ["APPROACH", "TOWER", "CTAF", "GROUND"]
+        let relevant = airport.frequencies.filter { frequency in
+            wanted.contains { frequency.type.uppercased().contains($0) }
+        }
+        guard !relevant.isEmpty else { return "" }
+
+        let list = relevant.prefix(3)
+            .map { "\($0.type) \($0.frequency)" }
+            .joined(separator: ", ")
+        return " Call \(airport.icao) on \(list)."
+    }
+
     private static func legPoint(_ leg: RouteLeg, _ t: Double, _ waypoints: [Waypoint]) -> CLLocationCoordinate2D {
         guard let from = waypoints.first(where: { $0.id == leg.fromID }),
               let index = waypoints.firstIndex(where: { $0.id == leg.fromID }),
@@ -391,7 +426,9 @@ enum RouteValidator {
                          notamStatus: NotamService.Status = .notConfigured,
                          notamCount: Int = 0,
                          airspace: AirspaceService? = nil,
-                         isStudentPilot: Bool = false) -> [Finding] {
+                         isStudentPilot: Bool = false,
+                         airports: AirportCatalog? = nil,
+                         terminalWeather: [String: Metar] = [:]) -> [Finding] {
         var findings: [Finding] = []
         let aircraft = route.aircraft
         let performance = route.performance
@@ -442,6 +479,27 @@ enum RouteValidator {
                                     fix: .setWaypointAltitude(wp.id, floor)))
         }
 
+        // Pinned altitudes that contradict the cruise level.
+        //
+        // The profile flies a waypoint's own altitude in preference to the cruise
+        // altitude, so pins silently win. That is correct behaviour and invisible
+        // behaviour at the same time: a generated route pins every terrain step-up,
+        // and a pilot who then raises the cruise altitude sees nothing change.
+        // Saying so, with a way to undo it, is the difference.
+        let pinned = route.waypoints.filter { $0.isAltitudeManual }
+        if !pinned.isEmpty {
+            let blocking = pinned.filter { ($0.plannedAltitudeFT ?? 0) < route.altitudeFT }
+            findings.append(Finding(
+                severity: blocking.isEmpty ? .advisory : .caution,
+                title: blocking.isEmpty
+                    ? "\(pinned.count) waypoint\(pinned.count == 1 ? " holds" : "s hold") a set altitude"
+                    : "\(blocking.count) pinned altitude\(blocking.count == 1 ? "" : "s") below the cruise level",
+                detail: blocking.isEmpty
+                    ? "\(pinned.map(\.ident).joined(separator: ", ")) fly their own altitude rather than the \(route.altitudeFT.formatted()) ft cruise. That is usually a deliberate step-up over terrain."
+                    : "\(blocking.map(\.ident).joined(separator: ", ")) are pinned below \(route.altitudeFT.formatted()) ft, and the profile flies a pinned altitude in preference to the cruise level — so changing the cruise altitude will not move them.",
+                fix: .clearWaypointOverrides))
+        }
+
         // Aircraft ceiling.
         if route.altitudeFT > performance.maxPlanningAltitudeFT {
             findings.append(Finding(severity: .warning, title: "Above the aircraft's usable altitude",
@@ -484,18 +542,68 @@ enum RouteValidator {
         }
 
         // Fuel and reserves.
+        //
+        // Asked of the hungriest sector rather than of the whole route. With a
+        // refuelling stop partway the tanks only ever have to cover one sector, and
+        // testing the total would reject a route that is perfectly legal. Without a
+        // stop there is one sector and the two are the same question.
         let reserveGal = 0.5 * performance.fuelBurnGPH
-        let required = profile.totalFuelGallons + reserveGal
+        let refuellingStops = route.waypoints.dropFirst().dropLast().filter { $0.stop?.refuels == true }
+        let binding = refuellingStops.isEmpty ? profile.totalFuelGallons : profile.maxSectorFuelGallons
+        let required = binding + reserveGal
+        let sectorNote = refuellingStops.isEmpty
+            ? ""
+            : " Measured over the longest of \(profile.sectors.count) sectors, since the tanks are filled at \(refuellingStops.map(\.ident).joined(separator: ", "))."
         if required > route.fuelOnBoardGal {
             findings.append(Finding(severity: .warning, title: "Not enough fuel",
-                                    detail: String(format: "Route burns %.1f gal and a 30 min day-VFR reserve is %.1f gal — %.1f gal needed against %.1f gal aboard. Add fuel or a stop.",
-                                                   profile.totalFuelGallons, reserveGal, required, route.fuelOnBoardGal),
+                                    detail: String(format: "Burns %.1f gal and a 30 min day-VFR reserve is %.1f gal — %.1f gal needed against %.1f gal aboard. Add fuel or a stop.",
+                                                   binding, reserveGal, required, route.fuelOnBoardGal) + sectorNote,
                                     fix: nil))
         } else {
             findings.append(Finding(severity: .pass, title: "Fuel and reserve",
                                     detail: String(format: "%.1f gal burn plus %.1f gal reserve against %.1f gal aboard — %.1f gal spare.",
-                                                   profile.totalFuelGallons, reserveGal, route.fuelOnBoardGal,
-                                                   route.fuelOnBoardGal - required),
+                                                   binding, reserveGal, route.fuelOnBoardGal,
+                                                   route.fuelOnBoardGal - required) + sectorNote,
+                                    fix: nil))
+        }
+
+        // Wind, and whether the plan in front of the pilot accounts for it.
+        //
+        // This check exists because for a long time it could not have been written:
+        // every time and fuel figure was computed in still air, so a 25 kt headwind
+        // simply did not appear anywhere in the plan.
+        if profile.usedWind {
+            let hw = profile.meanHeadwindKT
+            if abs(hw) < 3 {
+                findings.append(Finding(severity: .pass, title: "Wind accounted for",
+                                        detail: String(format: "Forecast winds aloft are close to calm along this route (mean %.0f kt component). Times and fuel are wind-corrected.", abs(hw)),
+                                        fix: nil))
+            } else if hw > 0 {
+                let stillAirMinutes = profile.totalDistanceNM / max(performance.cruiseKTAS, 1) * 60
+                let penalty = profile.totalTimeMinutes - stillAirMinutes
+                findings.append(Finding(
+                    severity: hw >= 25 ? .caution : .advisory,
+                    title: String(format: "%.0f kt mean headwind", hw),
+                    detail: String(format: "Times and fuel here are wind-corrected: the forecast costs roughly %.0f extra minutes and %.1f extra gallons against still air. Check the forecast again nearer departure.",
+                                   max(penalty, 0), max(penalty, 0) / 60 * performance.fuelBurnGPH),
+                    fix: nil))
+            } else {
+                findings.append(Finding(severity: .pass, title: String(format: "%.0f kt mean tailwind", -hw),
+                                        detail: "Times and fuel are wind-corrected and the forecast is in your favour. Plan the return leg separately — it will not be.",
+                                        fix: nil))
+            }
+
+            // A leg the aircraft cannot make good at all.
+            let unflyable = profile.legs.filter { $0.windApplied && $0.groundSpeedKT < performance.cruiseKTAS * 0.35 }
+            if !unflyable.isEmpty {
+                findings.append(Finding(
+                    severity: .warning, title: "Wind exceeds what the aircraft can make good",
+                    detail: "On \(unflyable.map { "\($0.fromIdent) → \($0.toIdent)" }.joined(separator: ", ")) the forecast wind leaves a ground speed under a third of cruise. Re-plan, wait, or expect not to arrive.",
+                    fix: nil))
+            }
+        } else {
+            findings.append(Finding(severity: .advisory, title: "Winds aloft not applied",
+                                    detail: "No winds-aloft forecast has loaded for this route, so every time and fuel figure is a still-air estimate. A 20 kt headwind on a trainer is roughly a 20% error, always against you.",
                                     fix: nil))
         }
         if route.fuelOnBoardGal > aircraft.usableFuelGal {
@@ -542,12 +650,36 @@ enum RouteValidator {
                     }
                     // Going over the shelf is the classic VFR answer, when the
                     // aircraft can actually get there.
+                    // Is this the airspace the flight departs from or lands in?
+                    //
+                    // If so, climbing over it is not a fix and must not be offered.
+                    // You cannot overfly the Class B you are taking off from: you
+                    // start on the ground inside it and you have to come back down
+                    // through it to land. Offering "set cruise 11,500" there produced
+                    // a fix that changed the cruise altitude, left the warning exactly
+                    // as it was, and looked broken — because the warning was right.
+                    let endpoints = [route.waypoints.first, route.waypoints.last].compactMap { $0 }
+                    let ownsAnEndpoint = endpoints.contains { endpoint in
+                        volume.contains(endpoint.coordinate)
+                    }
+
                     let overTheTop = ((volume.upperFT ?? 0) + 500)
-                    let canClimbOver = overTheTop <= performance.maxPlanningAltitudeFT && overTheTop > route.altitudeFT
+                    let canClimbOver = !ownsAnEndpoint
+                        && overTheTop <= performance.maxPlanningAltitudeFT
+                        && overTheTop > route.altitudeFT
+
+                    if ownsAnEndpoint {
+                        let which = endpoints.filter { volume.contains($0.coordinate) }
+                            .map(\.ident).joined(separator: " and ")
+                        detail += " This is the airspace \(which) sits in, so it cannot be flown around or over — the clearance is part of the flight, not a problem to design out."
+                    }
+
                     findings.append(Finding(
                         severity: bravoForStudent ? .warning : .caution,
-                        title: "Route enters \(volume.displayClass)",
-                        detail: detail,
+                        title: ownsAnEndpoint
+                            ? "\(volume.displayClass) at \(endpoints.filter { volume.contains($0.coordinate) }.map(\.ident).joined(separator: "/"))"
+                            : "Route enters \(volume.displayClass)",
+                        detail: detail + Self.radioGuidance(for: volume, route: route, airports: airports),
                         fix: canClimbOver ? .setCruise(
                             AltitudePlanner.hemisphericalAltitude(
                                 atLeast: Double(overTheTop),
@@ -559,6 +691,75 @@ enum RouteValidator {
             findings.append(Finding(severity: .advisory, title: "Airspace not checked",
                                     detail: "Controlled airspace data has not loaded for this route, so Class B, C and D penetration could not be verified.",
                                     fix: nil))
+        }
+
+        // Can the flight actually be made in the reported conditions?
+        //
+        // Distinct from the hazard advisories below: those describe the air en
+        // route, this asks whether the two ends are usable at all. A route that is
+        // legal, fuelled and terrain-clear is still not flyable VFR into a field
+        // reporting a 600 ft ceiling.
+        for (label, waypoint) in [("Departure", route.waypoints.first), ("Destination", route.waypoints.last)] {
+            guard let waypoint, let ident = waypoint.airportICAO,
+                  let metar = terminalWeather[ident] else { continue }
+
+            // Flight category is computed and published by the AWC from the
+            // observation itself, so it is used rather than re-derived here.
+            switch metar.fltCat {
+            case "LIFR", "IFR":
+                findings.append(Finding(
+                    severity: .warning,
+                    title: "\(label) \(ident) is \(metar.fltCat ?? "IFR")",
+                    detail: "\(ident) is reporting \(metar.fltCat == "LIFR" ? "low IFR" : "IFR") conditions. This is a VFR planner; the flight cannot legally or safely be made VFR into that. Raw: \(metar.rawOb)",
+                    fix: nil))
+            case "MVFR":
+                findings.append(Finding(
+                    severity: .caution,
+                    title: "\(label) \(ident) is marginal VFR",
+                    detail: "Ceiling or visibility at \(ident) is marginal — legal VFR, but with little margin for it getting worse. Raw: \(metar.rawOb)",
+                    fix: nil))
+            case "VFR":
+                findings.append(Finding(severity: .pass, title: "\(label) \(ident) is VFR",
+                                        detail: "Reported conditions at \(ident) are VFR.", fix: nil))
+            default:
+                break
+            }
+
+            // Crosswind on the best available runway, against what the airframe is
+            // demonstrated to handle. Uses published true headings — deriving a
+            // heading from the runway designation is wrong by up to five degrees,
+            // and that error lands straight in the crosswind component.
+            guard case .degrees(let windDir)? = metar.wdir,
+                  let windSpeed = metar.wspd, windSpeed > 0,
+                  let airport = airports?[ident], airport.isVerified else { continue }
+            let headings = airport.runways.flatMap { [$0.trueHeadingLow, $0.trueHeadingHigh].compactMap { $0 } }
+            guard !headings.isEmpty else { continue }
+
+            let gust = metar.wgst ?? windSpeed
+            // The runway the pilot would pick: the one with the least crosswind.
+            let best = headings.map { heading -> (heading: Double, cross: Double) in
+                let delta = (Double(windDir) - heading) * .pi / 180
+                return (heading, abs(gust * sin(delta)))
+            }.min { $0.cross < $1.cross }
+            guard let best else { continue }
+
+            let limit = aircraft.demonstratedCrosswindKT
+            if best.cross > limit {
+                findings.append(Finding(
+                    severity: .warning,
+                    title: "Crosswind at \(ident) exceeds the \(aircraft.name) limit",
+                    detail: String(format: "Best runway (%03.0f°T) still gives a %.0f kt crosswind in %.0f kt %@, against %.0f kt demonstrated for this type.",
+                                   best.heading, best.cross, gust,
+                                   metar.wgst != nil ? "gusts" : "wind", limit),
+                    fix: nil))
+            } else if best.cross > limit * 0.7 {
+                findings.append(Finding(
+                    severity: .caution,
+                    title: "Strong crosswind at \(ident)",
+                    detail: String(format: "Best runway (%03.0f°T) gives a %.0f kt crosswind against %.0f kt demonstrated. Within limits, but not by much.",
+                                   best.heading, best.cross, limit),
+                    fix: nil))
+            }
         }
 
         // Turbulence, icing and convection along the route, from AIRMETs/SIGMETs.

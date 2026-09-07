@@ -8,7 +8,10 @@ import MapKit
 struct RunwayEnd: Identifiable {
     let id = UUID()
     let designation: String       // "28R"
-    let headingDegrees: Double    // magnetic heading implied by the designation
+    /// True heading. Published where the database has it, and only derived from
+    /// the designation when it does not — the two differ by up to five degrees, and
+    /// the approach geometry in InFlightAmendment depends on this being true.
+    let headingDegrees: Double
     let lengthFT: Int
     let surface: String
     let lighted: Bool
