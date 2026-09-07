@@ -67,6 +67,18 @@ struct RouteLeg: Identifiable {
     let phase: FlightPhase
     let timeMinutes: Double
     let fuelGallons: Double
+    /// Average ground speed actually used to time this leg. Equal to TAS only when
+    /// no forecast covered the leg — `windApplied` says which.
+    var groundSpeedKT: Double = 0
+    /// Distance-weighted mean headwind: positive into wind, negative with it.
+    var headwindKT: Double = 0
+    /// The mean wind the leg was flown against, for display.
+    var windDirectionTrue: Double?
+    var windSpeedKT: Double?
+    /// False when the leg was timed in still air because no forecast covered it.
+    /// Surfaced rather than hidden, so a still-air estimate is never shown as
+    /// though it were wind-corrected.
+    var windApplied: Bool = false
     /// Highest terrain sampled under this leg, when terrain data has loaded.
     let maxTerrainFT: Int?
     /// Smallest gap between the planned altitude and the ground anywhere along the
@@ -141,7 +153,8 @@ enum AltitudePlanner {
     static func computeProfile(waypoints: [Waypoint],
                                cruiseAltitudeFT: Int,
                                performance: AircraftPerformance,
-                               terrain: TerrainSampler? = nil) -> AltitudeProfile {
+                               terrain: TerrainSampler? = nil,
+                               wind: WindField? = nil) -> AltitudeProfile {
         guard waypoints.count >= 2 else { return AltitudeProfile() }
 
         var profile = AltitudeProfile()
@@ -293,6 +306,11 @@ enum AltitudePlanner {
             var minutes = 0.0
             var fuel = 0.0
             var climbNM = 0.0, cruiseNM = 0.0, descentNM = 0.0
+            // Wind accumulators, distance-weighted so a short climb segment in a
+            // different layer cannot outvote the long cruise segment.
+            var headwindNM = 0.0, windVectorX = 0.0, windVectorY = 0.0, windedNM = 0.0
+            let legCourse = bearingDegrees(from: waypoints[i].coordinate,
+                                           to: waypoints[i + 1].coordinate)
             for step in 0..<steps {
                 let d0 = start + legDistance * Double(step) / Double(steps)
                 let d1 = start + legDistance * Double(step + 1) / Double(steps)
@@ -313,7 +331,34 @@ enum AltitudePlanner {
                 default:       speed = performance.cruiseKTAS;  burnFactor = 1.00
                 }
                 guard speed > 0 else { continue }
-                let segmentMinutes = (segmentNM / speed) * 60
+
+                // Fuel burns per hour in the air, so wind cannot change the rate —
+                // but it changes how many hours the leg takes, and the fuel follows
+                // from that. Timing on ground speed is the whole correction.
+                var groundSpeed = speed
+                if let wind {
+                    let midAltitude = (altitude(at: d0) + altitude(at: d1)) / 2
+                    let midCoord = coordinate(along: waypoints, cumulative: cumulative,
+                                              atDistance: (d0 + d1) / 2)
+                    if let w = wind.wind(at: midCoord, altitudeFT: midAltitude) {
+                        let solution = WindTriangle.solve(courseTrue: legCourse,
+                                                          trueAirspeedKT: speed,
+                                                          windFromTrue: w.directionTrue,
+                                                          windSpeedKT: w.speedKT)
+                        // A ground speed at or near zero means the aircraft cannot
+                        // make the track at all. Floor it so the leg reports an
+                        // enormous time rather than dividing by zero; the validator
+                        // is what turns that into a readable warning.
+                        groundSpeed = max(solution.groundSpeedKT, 1)
+                        headwindNM += solution.headwindKT * segmentNM
+                        let r = w.directionTrue * .pi / 180
+                        windVectorX += cos(r) * w.speedKT * segmentNM
+                        windVectorY += sin(r) * w.speedKT * segmentNM
+                        windedNM += segmentNM
+                    }
+                }
+
+                let segmentMinutes = (segmentNM / groundSpeed) * 60
                 minutes += segmentMinutes
                 fuel += (segmentMinutes / 60) * performance.fuelBurnGPH * burnFactor
             }
@@ -356,12 +401,19 @@ enum AltitudePlanner {
                 toIdent: waypoints[i + 1].ident,
                 startDistanceNM: start,
                 distanceNM: legDistance,
-                courseTrue: bearingDegrees(from: waypoints[i].coordinate, to: waypoints[i + 1].coordinate),
+                courseTrue: legCourse,
                 startAltitudeFT: startAlt,
                 endAltitudeFT: endAlt,
                 phase: phase,
                 timeMinutes: minutes,
                 fuelGallons: fuel,
+                groundSpeedKT: minutes > 0 ? legDistance / (minutes / 60) : 0,
+                headwindKT: windedNM > 0 ? headwindNM / windedNM : 0,
+                windDirectionTrue: windedNM > 0
+                    ? WindTriangle.normalized(atan2(windVectorY, windVectorX) * 180 / .pi) : nil,
+                windSpeedKT: windedNM > 0
+                    ? sqrt(windVectorX * windVectorX + windVectorY * windVectorY) / windedNM : nil,
+                windApplied: windedNM > 0,
                 maxTerrainFT: legTerrain,
                 minClearanceFT: legClearance
             ))

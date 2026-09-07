@@ -415,6 +415,9 @@ final class MapState: ObservableObject {
             || zip(previous.waypoints, route.waypoints).contains { a, b in
                 a.coordinate.latitude != b.coordinate.latitude || a.coordinate.longitude != b.coordinate.longitude
             }
+        if geometryChanged || previous.departureTime != route.departureTime {
+            winds.load(for: route.waypoints, departureTime: route.departureTime)
+        }
         if geometryChanged {
             terrain.loadTerrain(for: route.waypoints)
             refreshRouteWeather()
@@ -449,7 +452,8 @@ final class MapState: ObservableObject {
             waypoints: route.waypoints,
             cruiseAltitudeFT: route.altitudeFT,
             performance: route.performance,
-            terrain: sampler
+            terrain: sampler,
+            wind: winds.field.isEmpty ? nil : winds.field
         )
         cruiseSuggestion = AltitudePlanner.suggestCruiseAltitude(
             waypoints: route.waypoints,
@@ -739,6 +743,19 @@ final class MapState: ObservableObject {
             .store(in: &cancellables)
 
         terrain.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    self.recomputeProfile()
+                    self.objectWillChange.send()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Same treatment for wind: the profile is computed with whatever forecast
+        // has arrived, and recomputed when a better one does.
+        winds.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }

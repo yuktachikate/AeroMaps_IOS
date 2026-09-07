@@ -27,7 +27,7 @@ struct WeatherPanelView: View {
                     ForecastView()
                         .tag(1)
                     
-                    WindsView()
+                    WindsView(mapState: mapState)
                         .tag(2)
                     
                     MetarsView(weatherService: weatherService)
@@ -249,69 +249,113 @@ struct ForecastView: View {
 }
 
 // MARK: - Winds View
+// MARK: - Winds View
+
+/// Winds aloft along the planned route, from the forecast the planner itself uses.
+///
+/// This panel used to render `15 + index * 5` knots from `240 + index * 10` degrees
+/// — five rows of arithmetic that looked exactly like a real forecast and moved
+/// with neither location, altitude, nor time. A pilot could have planned a fuel
+/// load against it. It now shows the same WindField the vertical profile is
+/// computed from, or says plainly that no forecast has loaded.
 struct WindsView: View {
+    @ObservedObject var mapState: MapState
+
+    private var column: WindColumn? {
+        // The column nearest the route's midpoint: one place, honestly labelled,
+        // rather than a blend that would imply more resolution than the model has.
+        let columns = mapState.winds.field.columns
+        guard !columns.isEmpty else { return nil }
+        return columns[columns.count / 2]
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Winds Aloft
-                WeatherCard(
-                    title: "Winds Aloft",
-                    icon: "wind",
-                    color: .green
-                ) {
-                    VStack(spacing: 12) {
-                        ForEach(0..<5) { index in
-                            let altitude = 3000 + index * 3000
-                            let windSpeed = 15 + index * 5
-                            let windDirection = 240 + index * 10
-                            
-                            WindRow(
-                                altitude: "\(altitude) ft",
-                                direction: "\(windDirection)°",
-                                speed: "\(windSpeed) kt",
-                                temperature: "\(5 - index * 2)°C"
-                            )
-                            
-                            if index < 4 {
-                                Divider()
-                                    .background(Color.white.opacity(0.2))
+                if mapState.route.waypoints.count < 2 {
+                    emptyCard("No route planned",
+                              "Winds aloft are fetched along a planned route. Build a route and they will appear here.",
+                              "point.topleft.down.to.point.bottomright.curvepath")
+                } else if mapState.winds.isLoading {
+                    emptyCard("Fetching winds aloft…",
+                              "Requesting the pressure-level forecast along your route.", "clock.arrow.circlepath")
+                } else if let column {
+                    WeatherCard(title: "Winds Aloft", icon: "wind", color: .green) {
+                        VStack(spacing: 12) {
+                            ForEach(Array(column.levels.enumerated().reversed()), id: \.offset) { index, level in
+                                WindRow(altitude: "\(Int(level.altitudeFT.rounded() / 100) * 100) ft",
+                                        direction: String(format: "%03.0f°", level.directionTrue),
+                                        speed: String(format: "%.0f kt", level.speedKT),
+                                        temperature: level.temperatureC.map { String(format: "%.0f°C", $0) } ?? "—")
+                                if index > 0 { Divider().background(Color.white.opacity(0.1)) }
                             }
                         }
                     }
-                }
-                
-                // Wind Shear
-                WeatherCard(
-                    title: "Wind Shear",
-                    icon: "arrow.up.and.down",
-                    color: .red
-                ) {
-                    VStack(spacing: 12) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Wind Shear Alert")
+
+                    // What the wind is doing to the plan, not just what it is.
+                    if mapState.altitudeProfile.usedWind {
+                        WeatherCard(title: "Effect on your route", icon: "airplane", color: .cyan) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                let hw = mapState.altitudeProfile.meanHeadwindKT
+                                Text(abs(hw) < 3
+                                     ? "Near calm along the route — times and fuel are effectively still-air."
+                                     : String(format: "Mean %.0f kt %@ along the route. Times and fuel below are corrected for it.",
+                                              abs(hw), hw > 0 ? "headwind" : "tailwind"))
                                     .font(.subheadline)
-                                    .fontWeight(.semibold)
                                     .foregroundColor(.white)
-                                
-                                Text("Moderate wind shear below 2000 ft")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.7))
+
+                                ForEach(mapState.altitudeProfile.legs) { leg in
+                                    HStack {
+                                        Text("\(leg.fromIdent) → \(leg.toIdent)")
+                                            .font(.caption).foregroundColor(.white.opacity(0.8))
+                                        Spacer()
+                                        if leg.windApplied {
+                                            Text(String(format: "GS %.0f kt · %@%.0f kt",
+                                                        leg.groundSpeedKT,
+                                                        leg.headwindKT > 0 ? "headwind " : "tailwind ",
+                                                        abs(leg.headwindKT)))
+                                                .font(.caption).fontWeight(.semibold)
+                                                .foregroundColor(leg.headwindKT > 0 ? .orange : .green)
+                                        } else {
+                                            Text("still air").font(.caption).foregroundColor(.white.opacity(0.5))
+                                        }
+                                    }
+                                }
                             }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.title2)
-                                .foregroundColor(.red)
                         }
                     }
+
+                    Text(mapState.winds.freshness.shortLabel + " · Open-Meteo pressure levels, interpolated to altitude")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.5))
+                } else {
+                    emptyCard("No winds-aloft forecast",
+                              "The forecast could not be reached, so times and fuel on this route are still-air estimates. They will be low into any headwind.",
+                              "wifi.exclamationmark")
                 }
             }
             .padding()
         }
     }
+
+    private func emptyCard(_ title: String, _ detail: String, _ icon: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.title)
+                .foregroundColor(.white.opacity(0.5))
+            Text(title).font(.headline).foregroundColor(.white)
+            Text(detail)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.65))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(Color.white.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
 }
+
 
 // MARK: - METARs View
 struct MetarsView: View {

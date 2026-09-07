@@ -20,6 +20,13 @@ vertical profile computed from that airframe's actual numbers.
   and speeds, with terrain sampled underneath. Top of climb, top of descent, per-leg
   time and fuel, and a cruise altitude suggested from terrain clearance plus the VFR
   hemispherical rule.
+- **Wind-corrected times and fuel** — every leg is timed at ground speed, solved from
+  the forecast winds aloft against the leg's course. A 30 kt headwind on a C172 is a
+  35% fuel difference, and it is always in the unsafe direction.
+- **Midway stops** — mark any intermediate airport as a fuel, rest or overnight stop.
+  The profile descends and lands there rather than overflying, ground time counts
+  toward the arrival, and fuel is checked against the hungriest *sector* rather than
+  the route total when the tanks are filled partway.
 - **Route Advisor** — generate a route, compare alternatives, and check the finished
   plan against terrain clearance, VFR cruising altitudes, controlled airspace, fuel
   reserves and aircraft limits.
@@ -40,6 +47,7 @@ rather than being filled in — see [Data honesty](#data-honesty).
 | METAR / TAF / AIRMET / SIGMET | [NOAA Aviation Weather Center](https://aviationweather.gov/data/api/) | Official FAA/NWS, worldwide, no key |
 | Controlled airspace | [FAA AIS](https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer) | Published Class B/C/D/E. **US only.** Rate limited |
 | Terrain elevation | [Open-Meteo](https://open-meteo.com/) | No key |
+| Winds aloft | [Open-Meteo pressure levels](https://open-meteo.com/) | 1000–500 hPa with geopotential heights, worldwide, no key |
 | Live traffic | [OpenSky Network](https://openskynetwork.github.io/opensky-api/) | Anonymous: 400 credits/day **per device** |
 | NOTAMs | — | **Not included.** No free, open NOTAM API exists; the FAA's is approval-gated. See [API credentials](#api-credentials) |
 
@@ -156,7 +164,11 @@ covered NOTAMs. Everything else in the app is keyless.
 AeroMaps/                  the iOS app
   AeronauticalData.swift        airport/navaid database, catalog, spatial index
   AeronauticalDataUpdater.swift on-device rebuild from OurAirports CSVs
-  AltitudeProfile.swift         vertical profile engine: climb/cruise/descent
+  AltitudeProfile.swift         vertical profile engine: climb/cruise/descent, stops
+  WindModel.swift               wind triangle, wind field, vertical interpolation
+  WindsAloftService.swift       winds aloft from Open-Meteo pressure levels
+  FlightRecord.swift            flight log: track, deviation, amendments, fuel
+  InFlightAmendment.swift       runway assignment and re-planning in flight
   RouteAssistant.swift          route generation + validation
   AviationWeatherService.swift  METAR/TAF/SIGMET from NOAA
   AirspaceService.swift         FAA controlled airspace
@@ -165,12 +177,27 @@ AeroMaps/                  the iOS app
   Resources/aerodata.json       generated — see below
 tools/
   build_airport_data.py    regenerates aerodata.json from OurAirports
+  planning-tests/run.sh    off-device tests for the planning engine
 backend/                   FastAPI service for prompt-tree tracing (not required to run the app)
 frontend/                  React viewer for those traces (not required to run the app)
 ```
 
 The app does not talk to `backend/`. Both exist for a separate tracing experiment
 and can be ignored if you are working on the iOS side.
+
+### Testing the planning engine
+
+The parts where being wrong is a hazard rather than a cosmetic bug — the wind
+triangle, the vertical profile, stops and sector fuel, cross-track deviation, the
+fuel estimator, the approach geometry — are pure `Foundation` + `CoreLocation` and
+run without a simulator:
+
+```bash
+./tools/planning-tests/run.sh
+```
+
+A couple of seconds, no Xcode project involved. Add a case there before changing
+any of that maths.
 
 ### Regenerating the airport database
 
@@ -208,9 +235,13 @@ planning aid and a hazard.
   non-commercial).
 - **Approach plates** are not included; the Airport Diagram is drawn from runway
   data, not FAA charts.
-- **Winds aloft** above 3,000 ft still use a positional model when no station is
-  reporting; surface wind is real.
 - **Weight & balance** uses a fixed empty weight rather than a per-airframe figure.
+- **Stops model the flight profile only** — the descent, the landing and the climb
+  out. Taxi, run-up and takeoff fuel for the extra cycle are not added, so a route
+  with several stops is slightly optimistic on fuel.
+- **In-flight fuel is estimated from elapsed time** at the aircraft's planned burn.
+  It is a planning aid for "can I still make it after that reroute?", not a
+  totaliser, and it says so wherever it is shown.
 - `FFMClient` returns bundled mock JSON.
 
 ## Contributing
