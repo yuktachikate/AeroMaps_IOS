@@ -422,8 +422,9 @@ struct SaveRouteDialog: View {
 
 // MARK: - Traffic Source Badge
 
-/// Live, cached, or simulated — stated plainly, with the remaining data budget when
-/// the feed is real.
+/// Live, cached, or unavailable — stated plainly, with the remaining data budget
+/// when the feed is real. There is no fourth state: the app no longer invents
+/// traffic when the feed cannot be reached.
 struct TrafficSourceBadge: View {
     @ObservedObject var service: LiveFlightService
 
@@ -452,17 +453,19 @@ struct TrafficSourceBadge: View {
 
     private func icon(_ source: LiveFlightService.TrafficSource) -> String {
         switch source {
-        case .live:      return "dot.radiowaves.up.forward"
-        case .cached:    return "clock.arrow.circlepath"
-        case .simulated: return "exclamationmark.triangle.fill"
+        case .live:        return "dot.radiowaves.up.forward"
+        case .cached:      return "clock.arrow.circlepath"
+        case .unavailable: return "antenna.radiowaves.left.and.right.slash"
         }
     }
 
     private func tint(_ source: LiveFlightService.TrafficSource) -> Color {
         switch source {
-        case .live:      return .green
-        case .cached:    return .yellow
-        case .simulated: return .orange
+        case .live:        return .green
+        case .cached:      return .yellow
+        // Grey, not orange. Nothing is wrong with the flight — there is simply no
+        // traffic data, and an alarm colour would imply a hazard that is not there.
+        case .unavailable: return .white.opacity(0.65)
         }
     }
 }
@@ -661,14 +664,18 @@ private struct TrackedFlightRow: View {
 
     private func openDetail() {
         guard let callsign = flight.callsign else { return }
-        let dest = flight.destination ?? "KLAX"
-        let destCoord = mapState.airports[dest]?.coordinate ?? CLLocationCoordinate2D(latitude: 33.9416, longitude: -118.4085)
-        let spd = flight.speed ?? 430
-        let distNM = round(mapState.distanceNM(flight.coordinate, destCoord))
+        // Every unknown here used to default to a plausible-looking value — KLAX as
+        // the destination, 430 kt, FL320, squawk 1200 — for an aircraft the feed said
+        // nothing about. Unknown now reads as unknown, and distance is only computed
+        // when there is a real destination to measure to.
+        let dest = flight.destination ?? "—"
+        let destCoord = mapState.airports[dest]?.coordinate
+        let spd = flight.speed ?? 0
+        let distNM = destCoord.map { round(mapState.distanceNM(flight.coordinate, $0)) } ?? 0
         mapState.selectedFlight = FlightAnalysis(
-            callsign: callsign, origin: flight.origin ?? "KSFO", destination: dest,
-            altitude: flight.altitude ?? 32000, speed: spd, heading: flight.heading ?? 180,
-            verticalRate: flight.verticalRate ?? 0, squawk: flight.squawk ?? "1200",
+            callsign: callsign, origin: flight.origin ?? "—", destination: dest,
+            altitude: flight.altitude ?? 0, speed: spd, heading: flight.heading ?? 0,
+            verticalRate: flight.verticalRate ?? 0, squawk: flight.squawk ?? "—",
             distance: distNM, eta: Date().addingTimeInterval(max(0.2, distNM / spd) * 3600),
             fuelRemaining: max(600.0, round(distNM * 6.5)), weather: "VFR Clear • Winds 270° @ 18kt",
             icao24: flight.icao24, coordinate: flight.coordinate)
@@ -1348,12 +1355,14 @@ struct MapView: UIViewRepresentable {
             currentIcao24Set.insert(flight.icao24)
             
             let cs = flight.callsign ?? "FLIGHT"
-            let orig = flight.origin ?? "KSFO"
-            let dest = flight.destination ?? "KLAX"
-            let fl = Int((flight.altitude ?? 30000) / 100)
-            let spd = Int(flight.speed ?? 400)
-            let hdg = Int(flight.heading ?? 180)
-            let newSubtitle = "\(cs): \(orig) → \(dest) [FL\(fl), \(spd)kts, \(hdg)°]"
+            // The map label only carries what the feed actually reported. With no
+            // flight plan in a state vector, that is usually just the telemetry.
+            let fl = Int((flight.altitude ?? 0) / 100)
+            let spd = Int(flight.speed ?? 0)
+            let hdg = Int(flight.heading ?? 0)
+            let route = [flight.origin, flight.destination].compactMap { $0 }
+            let routePart = route.count == 2 ? "\(route[0]) → \(route[1]): " : ""
+            let newSubtitle = "\(cs): \(routePart)[FL\(fl), \(spd)kts, \(hdg)°]"
             let newTitle = flight.isTracked ? "Tracked Flight" : "Traffic Flight"
             
             if let existingList = existingDict[flight.icao24], let existing = existingList.first {
@@ -1797,17 +1806,23 @@ struct MapView: UIViewRepresentable {
                 let callsign = parts.first ?? "FLIGHT"
                 let routeStr = parts.last ?? ""
                 let routeParts = routeStr.components(separatedBy: " → ")
-                let origin = routeParts.first ?? "KSFO"
-                let dest = routeParts.last ?? "KLAX"
+                // Unknown, not KSFO/KLAX. OpenSky carries no flight plan, so an
+                // aircraft with no route data must not be shown flying one.
+                let origin = routeParts.first.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+                let dest = routeParts.count > 1 ? (routeParts.last ?? "—") : "—"
                 
                 // Fetch real live flight telemetry object if available
                 let liveFlight = parent.liveFlightService.flights.first(where: { $0.icao24 == flightAnn.icao24 || $0.callsign == callsign })
                 
-                let realAlt = liveFlight?.altitude ?? Double.random(in: 28000...41000)
-                let realSpeed = liveFlight?.speed ?? Double.random(in: 410...490)
-                let realHeading = liveFlight?.heading ?? Double.random(in: 45...315)
+                // Unknown stays unknown. These used to fall back to Double.random,
+                // and the squawk to a random code in the VFR/emergency band — invented
+                // telemetry printed under a real flight's callsign, with no badge on
+                // this panel to say so.
+                let realAlt = liveFlight?.altitude ?? 0
+                let realSpeed = liveFlight?.speed ?? 0
+                let realHeading = liveFlight?.heading ?? 0
                 let realVRate = liveFlight?.verticalRate ?? 0.0
-                let realSquawk = liveFlight?.squawk ?? String(format: "%04d", Int.random(in: 1200...7700))
+                let realSquawk = liveFlight?.squawk ?? "—"
                 
                 // Calculate real distance to destination using Haversine
                 let destCoord = parent.mapState.airports[dest]?.coordinate ?? CLLocationCoordinate2D(latitude: 37.6213, longitude: -122.3790)
@@ -1866,15 +1881,17 @@ struct MapView: UIViewRepresentable {
                 let callsign = parts.first ?? "FLIGHT"
                 let routeStr = parts.last ?? ""
                 let routeParts = routeStr.components(separatedBy: " → ")
-                let origin = routeParts.first ?? "KSFO"
-                let dest = routeParts.last ?? "KLAX"
+                // Unknown, not KSFO/KLAX. OpenSky carries no flight plan, so an
+                // aircraft with no route data must not be shown flying one.
+                let origin = routeParts.first.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+                let dest = routeParts.count > 1 ? (routeParts.last ?? "—") : "—"
                 
                 let liveFlight = parent.liveFlightService.flights.first(where: { $0.callsign == callsign })
-                let realAlt = liveFlight?.altitude ?? Double.random(in: 24000...38000)
-                let realSpeed = liveFlight?.speed ?? Double.random(in: 390...470)
-                let realHeading = liveFlight?.heading ?? Double.random(in: 30...330)
+                let realAlt = liveFlight?.altitude ?? 0
+                let realSpeed = liveFlight?.speed ?? 0
+                let realHeading = liveFlight?.heading ?? 0
                 let realVRate = liveFlight?.verticalRate ?? 0.0
-                let realSquawk = liveFlight?.squawk ?? String(format: "%04d", Int.random(in: 1200...7700))
+                let realSquawk = liveFlight?.squawk ?? "—"
                 
                 let destCoord = parent.mapState.airports[dest]?.coordinate ?? CLLocationCoordinate2D(latitude: 37.6213, longitude: -122.3790)
                 let realDistNM = parent.mapState.distanceNM(annotation.coordinate, destCoord)

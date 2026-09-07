@@ -141,12 +141,15 @@ class LiveFlightService: ObservableObject {
                 id: UUID(),
                 icao24: "TRK-\(callsign)",
                 callsign: callsign,
-                origin: origin ?? "KSFO",
-                destination: destination ?? "KLAX",
-                coordinate: coordinate ?? CLLocationCoordinate2D(latitude: 37.6213, longitude: -122.3790),
-                altitude: altitude ?? 35000,
-                speed: speed ?? 450,
-                heading: heading ?? 180,
+                // A callsign the pilot added by hand, before the feed has found it.
+                // It is a placeholder for a real aircraft, so it carries no invented
+                // position or telemetry — those arrive when the feed does.
+                origin: origin,
+                destination: destination,
+                coordinate: coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                altitude: altitude,
+                speed: speed,
+                heading: heading,
                 verticalRate: 0,
                 squawk: "1200",
                 timestamp: Date(),
@@ -214,16 +217,23 @@ class LiveFlightService: ObservableObject {
     // secret needed to use it cannot be kept safe inside a shipped binary.
     private let baseURL = "https://opensky-network.org/api"
 
-    /// Where the traffic on screen actually came from. Traffic that is stale or
-    /// simulated must say so — presenting either as live is the kind of thing a
-    /// pilot should never have to guess about.
+    /// Where the traffic on screen came from — and, when there is none, why.
+    ///
+    /// There used to be a fourth state here: `simulated`, which drew about thirty
+    /// invented aircraft with plausible callsigns, random positions, altitudes,
+    /// speeds and squawk codes whenever the feed was unreachable. It is gone.
+    /// Traffic is a see-and-avoid aid, and inventing it is worse than showing
+    /// nothing: the symbols were indistinguishable from real returns, the only
+    /// warning was a corner pill that is easy to miss in flight, and the habit it
+    /// teaches — trusting a display that is sometimes fiction — is the dangerous
+    /// part. An empty sky that says why is honest and more useful.
     enum TrafficSource: Equatable {
         case live
         case cached(age: TimeInterval)
-        case simulated(reason: String)
+        case unavailable(reason: String)
 
         var isReal: Bool {
-            if case .simulated = self { return false }
+            if case .unavailable = self { return false }
             return true
         }
 
@@ -233,17 +243,17 @@ class LiveFlightService: ObservableObject {
             case .cached(let age):
                 let minutes = Int(age / 60)
                 return minutes < 1 ? "Live traffic (cached)" : "Traffic \(minutes) min old"
-            case .simulated: return "Simulated traffic"
+            case .unavailable: return "Traffic unavailable"
             }
         }
 
         var detail: String? {
-            if case .simulated(let reason) = self { return reason }
+            if case .unavailable(let reason) = self { return reason }
             return nil
         }
     }
 
-    @Published private(set) var trafficSource: TrafficSource = .simulated(reason: "Starting up")
+    @Published private(set) var trafficSource: TrafficSource = .unavailable(reason: "Starting up")
     /// Credits OpenSky says are left today, when it tells us.
     @Published private(set) var remainingCredits: Int?
 
@@ -277,7 +287,9 @@ class LiveFlightService: ObservableObject {
     
     init() {
         loadTrackedCallsigns()
-        initInitialFlights()
+        // Nothing is seeded. Until the feed answers, there is no traffic — which is
+        // the truth, and the pill says so.
+        trafficSource = .unavailable(reason: "Waiting for the traffic feed")
         startLiveUpdates()
     }
     
@@ -402,13 +414,13 @@ private let globalHubs: [MajorAirportHub] = [
         // Budget guard: stop before the quota is gone so the rest of the day still
         // has a working feed, and back off entirely once OpenSky refuses.
         if let until = quotaExhaustedUntil, Date() < until {
-            serveStaleOrSimulate(tile: tile, center: center, latDelta: latDelta,
+            serveCachedOrNothing(tile: tile, center: center, latDelta: latDelta,
                                  lonDelta: lonDelta, targetCount: targetCount,
                                  reason: "Daily traffic data limit reached")
             return
         }
         if let credits = remainingCredits, credits <= Self.creditReserve {
-            serveStaleOrSimulate(tile: tile, center: center, latDelta: latDelta,
+            serveCachedOrNothing(tile: tile, center: center, latDelta: latDelta,
                                  lonDelta: lonDelta, targetCount: targetCount,
                                  reason: "Traffic data budget low — holding a reserve")
             return
@@ -416,7 +428,7 @@ private let globalHubs: [MajorAirportHub] = [
 
         let urlString = "\(baseURL)/states/all?lamin=\(minLat)&lamax=\(maxLat)&lomin=\(minLon)&lomax=\(maxLon)"
         guard let url = URL(string: urlString) else {
-            generateRegionalFleetFallback(center: center, latDelta: latDelta, lonDelta: lonDelta, targetCount: targetCount)
+            applyFleet(trackedOnly(), source: .unavailable(reason: "Could not build the traffic request"))
             return
         }
 
@@ -430,7 +442,7 @@ private let globalHubs: [MajorAirportHub] = [
                 if http.statusCode == 429 || http.statusCode == 403 {
                     DispatchQueue.main.async {
                         self.quotaExhaustedUntil = Calendar.current.startOfDay(for: Date().addingTimeInterval(86_400))
-                        self.serveStaleOrSimulate(tile: tile, center: center, latDelta: latDelta,
+                        self.serveCachedOrNothing(tile: tile, center: center, latDelta: latDelta,
                                                   lonDelta: lonDelta, targetCount: targetCount,
                                                   reason: "Daily traffic data limit reached")
                     }
@@ -440,7 +452,7 @@ private let globalHubs: [MajorAirportHub] = [
 
             guard let data, error == nil else {
                 DispatchQueue.main.async {
-                    self.serveStaleOrSimulate(tile: tile, center: center, latDelta: latDelta,
+                    self.serveCachedOrNothing(tile: tile, center: center, latDelta: latDelta,
                                               lonDelta: lonDelta, targetCount: targetCount,
                                               reason: "No connection to the traffic feed")
                 }
@@ -466,20 +478,32 @@ private let globalHubs: [MajorAirportHub] = [
                         let spdKts = velMs * 1.94384
                         let hdg = state[10] as? Double ?? 180
                         
-                        let (orig, dest) = self.getRegionAirports(lat: lat, lon: lon)
-                        
+                        // Origin and destination are left nil on purpose. OpenSky's
+                        // state vectors do not carry a flight plan, and this used to
+                        // fill them from a per-region list of plausible airports
+                        // picked at random — so a real aircraft was shown flying a
+                        // route it had nothing to do with, on the *live* path, with
+                        // the pill still reading "Live traffic".
+                        //
+                        // Squawk and vertical rate, by contrast, are genuinely in the
+                        // state vector (indices 14 and 11) and were being discarded
+                        // in favour of a hardcoded "1200" and a flat zero. They are
+                        // read properly now.
+                        let squawk = state.count > 14 ? state[14] as? String : nil
+                        let verticalRateMs = state.count > 11 ? state[11] as? Double : nil
+
                         parsed.append(
                             LiveFlight(
                                 icao24: icao,
                                 callsign: callsign,
-                                origin: orig,
-                                destination: dest,
+                                origin: nil,
+                                destination: nil,
                                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
                                 altitude: altFt,
                                 speed: spdKts,
                                 heading: hdg,
-                                verticalRate: 0,
-                                squawk: "1200",
+                                verticalRate: verticalRateMs.map { $0 * 196.850394 },
+                                squawk: squawk,
                                 isTracked: false
                             )
                         )
@@ -503,43 +527,21 @@ private let globalHubs: [MajorAirportHub] = [
             } catch {}
             
             DispatchQueue.main.async {
-                self.serveStaleOrSimulate(tile: tile, center: center, latDelta: latDelta,
+                self.serveCachedOrNothing(tile: tile, center: center, latDelta: latDelta,
                                           lonDelta: lonDelta, targetCount: targetCount,
                                           reason: "Traffic feed returned nothing for this area")
             }
         }.resume()
     }
     
-    private func getRegionAirports(lat: Double, lon: Double) -> (String, String) {
-        if lat > 7.0 && lat < 36.0 && lon > 68.0 && lon < 92.0 {
-            let india = ["VIDP", "VABB", "VOBL", "VOMM", "VECC", "VOHS", "VAGO", "VOCI"]
-            return (india.randomElement()!, india.reversed().randomElement()!)
-        }
-        if lat > 41.0 && lat < 44.0 && lon > -74.0 && lon < -69.0 {
-            let bos = ["KBOS", "KJFK", "KEWR", "KLGA", "KPVD", "KBED", "KORH", "KMHT"]
-            return (bos.randomElement()!, bos.reversed().randomElement()!)
-        }
-        if lat > 39.5 && lat < 41.5 && lon > -75.0 && lon < -72.5 {
-            let ny = ["KJFK", "KEWR", "KLGA", "KTEB", "KHPN", "KISP"]
-            return (ny.randomElement()!, ny.reversed().randomElement()!)
-        }
-        if lat > 41.0 && lat < 44.0 && lon > -90.0 && lon < -85.0 {
-            let chi = ["KORD", "KMDW", "KMKE", "KIND", "KRFD"]
-            return (chi.randomElement()!, chi.reversed().randomElement()!)
-        }
-        if lat > 48.0 && lat < 56.0 && lon > -10.0 && lon < 15.0 {
-            let eu = ["EGLL", "EGKK", "EGGW", "LFPG", "EHAM", "EDDF", "LEMD", "LIRF"]
-            return (eu.randomElement()!, eu.reversed().randomElement()!)
-        }
-        if lat > 20.0 && lat < 45.0 && lon > 120.0 && lon < 145.0 {
-            let asia = ["RJTT", "RJAA", "RJBB", "RKSI", "VHHH", "WSSS"]
-            return (asia.randomElement()!, asia.reversed().randomElement()!)
-        }
-        let usWest = ["KSFO", "KLAX", "KSJC", "KOAK", "KSAN", "KSEA", "KPDX", "KLAS", "KPHX", "KDFW", "KDEN"]
-        return (usWest.randomElement()!, usWest.reversed().randomElement()!)
-    }
-    
     /// Applies a fleet and records where it came from.
+    /// Flights the pilot asked to track, kept across an outage as their last known
+    /// position. These came from the real feed when it was reachable; nothing here
+    /// is generated.
+    private func trackedOnly() -> [LiveFlight] {
+        activeFlights.filter { $0.isTracked }
+    }
+
     private func applyFleet(_ fleet: [LiveFlight], source: TrafficSource) {
         activeFlights = fleet
         flights = fleet
@@ -549,7 +551,7 @@ private let globalHubs: [MajorAirportHub] = [
 
     /// The fallback ladder: a stale-but-real cached tile beats invented traffic, and
     /// invented traffic beats an empty map — but each one says what it is.
-    private func serveStaleOrSimulate(tile: TileKey,
+    private func serveCachedOrNothing(tile: TileKey,
                                       center: CLLocationCoordinate2D,
                                       latDelta: Double, lonDelta: Double,
                                       targetCount: Int,
@@ -571,9 +573,9 @@ private let globalHubs: [MajorAirportHub] = [
             return
         }
 
-        generateRegionalFleetFallback(center: center, latDelta: latDelta,
-                                      lonDelta: lonDelta, targetCount: targetCount)
-        trafficSource = .simulated(reason: reason)
+        // Nothing real to show. The map goes empty and the pill says why, rather
+        // than filling the sky with invented aircraft.
+        applyFleet(trackedOnly(), source: .unavailable(reason: reason))
     }
 
     /// OpenSky reports the remaining allowance in a response header; names have
@@ -599,100 +601,6 @@ private let globalHubs: [MajorAirportHub] = [
         }
     }
 
-    private func generateRegionalFleetFallback(center: CLLocationCoordinate2D, latDelta: Double, lonDelta: Double, targetCount: Int) {
-        var fleet: [LiveFlight] = activeFlights.filter { $0.isTracked }
-        
-        // Find visible hub airports within current map viewport
-        let minLat = center.latitude - latDelta * 0.5
-        let maxLat = center.latitude + latDelta * 0.5
-        let minLon = center.longitude - lonDelta * 0.5
-        let maxLon = center.longitude + lonDelta * 0.5
-        
-        let matchingHubs = globalHubs.filter { hub in
-            hub.coordinate.latitude >= minLat && hub.coordinate.latitude <= maxLat &&
-            hub.coordinate.longitude >= minLon && hub.coordinate.longitude <= maxLon
-        }
-        
-        // Build weighted hub selection pool (give West Coast / major corridors extra density weight)
-        var weightedHubs: [MajorAirportHub] = matchingHubs.isEmpty ? globalHubs : matchingHubs
-        let westCoastHubs = weightedHubs.filter { $0.coordinate.latitude > 30 && $0.coordinate.latitude < 50 && $0.coordinate.longitude > -125 && $0.coordinate.longitude < -110 }
-        weightedHubs.append(contentsOf: westCoastHubs)
-        weightedHubs.append(contentsOf: westCoastHubs)
-        
-        let activeHubs = weightedHubs
-        
-        // Ensure every active hub airport has a guaranteed cluster of 15-20 planes departing/approaching it!
-        let hubOffsetScale = max(0.12, min(2.5, latDelta * 0.10))
-        var planeIndex = 1
-        for hub in matchingHubs {
-            for j in 1...15 {
-                planeIndex += 1
-                let offsetLat = Double.random(in: -hubOffsetScale...hubOffsetScale)
-                let offsetLon = Double.random(in: -hubOffsetScale...hubOffsetScale)
-                let pfx = hub.airlines.randomElement() ?? "UAL"
-                let dest = globalHubs.filter({ $0.icao != hub.icao }).randomElement()?.icao ?? "KLAX"
-                
-                fleet.append(
-                    LiveFlight(
-                        icao24: "HUB\(hub.icao)\(j)",
-                        callsign: "\(pfx)\(200 + j * 5)",
-                        origin: hub.icao,
-                        destination: dest,
-                        coordinate: CLLocationCoordinate2D(latitude: hub.coordinate.latitude + offsetLat, longitude: hub.coordinate.longitude + offsetLon),
-                        altitude: Double.random(in: 1500...18000),
-                        speed: Double.random(in: 120...280),
-                        heading: Double.random(in: 0...359),
-                        verticalRate: 0,
-                        squawk: "\(1400 + j)",
-                        isTracked: false
-                    )
-                )
-            }
-        }
-        
-        for i in 1...targetCount {
-            let hubA = activeHubs.randomElement()!
-            var hubB = activeHubs.randomElement()!
-            if hubA.icao == hubB.icao && activeHubs.count > 1 {
-                hubB = activeHubs.first(where: { $0.icao != hubA.icao }) ?? hubB
-            }
-            
-            // Interpolate position along real flight route between Hub A and Hub B
-            let fraction = Double.random(in: 0.05...0.95)
-            let jitterLat = Double.random(in: -0.15...0.15)
-            let jitterLon = Double.random(in: -0.15...0.15)
-            
-            let flightLat = hubA.coordinate.latitude + (hubB.coordinate.latitude - hubA.coordinate.latitude) * fraction + jitterLat
-            let flightLon = hubA.coordinate.longitude + (hubB.coordinate.longitude - hubA.coordinate.longitude) * fraction + jitterLon
-            
-            let alt = Double([3000, 7500, 12000, 24000, 31000, 35000, 39000].randomElement()!)
-            let spd = Double.random(in: 140...490)
-            let pfx = hubA.airlines.randomElement() ?? "FLT"
-            
-            fleet.append(
-                LiveFlight(
-                    icao24: "X\(5000 + i)",
-                    callsign: "\(pfx)\(100 + i * 3)",
-                    origin: hubA.icao,
-                    destination: hubB.icao,
-                    coordinate: CLLocationCoordinate2D(latitude: flightLat, longitude: flightLon),
-                    altitude: alt,
-                    speed: spd,
-                    heading: Double.random(in: 0...359),
-                    verticalRate: 0,
-                    squawk: "\(1200 + (i % 300))",
-                    isTracked: false
-                )
-            )
-        }
-        
-        self.activeFlights = fleet
-        DispatchQueue.main.async {
-            self.flights = fleet
-            self.isLoading = false
-        }
-    }
-    
     func startLiveUpdates() {
         timer?.invalidate()
         lastPositionUpdate = Date()
@@ -717,79 +625,6 @@ private let globalHubs: [MajorAirportHub] = [
         updateFlightPositions()
     }
     
-    private func initInitialFlights() {
-        var fleet: [LiveFlight] = [
-            // Tracked Primary Flights (GREEN)
-            LiveFlight(icao24: "A12345", callsign: "UAL1234", origin: "KSFO", destination: "KLAX", coordinate: CLLocationCoordinate2D(latitude: 37.55, longitude: -122.25), altitude: 35000, speed: 450, heading: 170, verticalRate: 0, squawk: "1234", isTracked: true),
-            LiveFlight(icao24: "B67890", callsign: "SWA5678", origin: "KSJC", destination: "KLAS", coordinate: CLLocationCoordinate2D(latitude: 37.35, longitude: -121.95), altitude: 28000, speed: 380, heading: 110, verticalRate: 500, squawk: "5678", isTracked: true),
-            LiveFlight(icao24: "C11111", callsign: "AAL9999", origin: "KOAK", destination: "KPHX", coordinate: CLLocationCoordinate2D(latitude: 37.72, longitude: -122.15), altitude: 32000, speed: 420, heading: 95, verticalRate: -200, squawk: "9999", isTracked: true),
-            LiveFlight(icao24: "G55555", callsign: "N734SP", origin: "KSQL", destination: "KPAO", coordinate: CLLocationCoordinate2D(latitude: 37.48, longitude: -122.20), altitude: 3500, speed: 120, heading: 130, verticalRate: 0, squawk: "1200", isTracked: true)
-        ]
-        
-        let callsigns = ["N1429K", "SWA1049", "DAL842", "ASA491", "CPA830", "FDX1938", "UPS492", "N820GA", "N941C", "N204SF", "SKY5820", "HAL71", "ACA730", "KAL024", "ANA107", "UAL491", "SWA204", "N412PA", "N802E", "N619GA", "N304C", "N109K", "N782W", "N551SF", "AAL302", "DAL910", "ASA832", "JBU409", "N992TC", "N331B"]
-        let origins = ["KSFO", "KSJC", "KOAK", "KSQL", "KPAO", "KHWD", "KCCR", "KRHV", "KRNO", "KSMF"]
-        let destinations = ["KLAX", "KLAS", "KSEA", "KJFK", "KORD", "KPHX", "KDEN", "KSAN", "KSLC", "KPDX"]
-        
-        for (i, cs) in callsigns.enumerated() {
-            let lat = 37.10 + Double(i % 6) * 0.22 + Double.random(in: -0.05...0.05)
-            let lon = -122.50 + Double(i / 6) * 0.28 + Double.random(in: -0.05...0.05)
-            let alt = Double([2500, 4500, 8500, 14000, 24000, 32000, 38000].randomElement()!)
-            let spd = Double.random(in: 110...480)
-            let hdg = Double.random(in: 0...359)
-            
-            fleet.append(
-                LiveFlight(
-                    icao24: "X\(1000 + i)",
-                    callsign: cs,
-                    origin: origins.randomElement()!,
-                    destination: destinations.randomElement()!,
-                    coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                    altitude: alt,
-                    speed: spd,
-                    heading: hdg,
-                    verticalRate: 0,
-                    squawk: "\(1200 + i)",
-                    isTracked: false
-                )
-            )
-        }
-        
-        // Apply persisted tracked state so untracking survives a restart, and
-        // re-create any tracked callsigns the user added that are not in the seed.
-        for i in fleet.indices {
-            fleet[i].isTracked = trackedCallsigns.contains(fleet[i].callsign ?? "")
-        }
-        let present = Set(fleet.compactMap { $0.callsign })
-        for cs in trackedCallsigns where !present.contains(cs) {
-            fleet.append(LiveFlight(
-                icao24: "TRK-\(cs)", callsign: cs, origin: "KSFO", destination: "KLAX",
-                coordinate: CLLocationCoordinate2D(latitude: 37.6213, longitude: -122.3790),
-                altitude: 35000, speed: 450, heading: 180, verticalRate: 0, squawk: "1200", isTracked: true))
-        }
-
-        // Anything reaching here is generated, not observed.
-        DispatchQueue.main.async {
-            if self.trafficSource.isReal {
-                self.trafficSource = .simulated(reason: "Traffic feed unavailable")
-            }
-        }
-
-        // Aircraft already in view keep their position and identity. Rebuilding the
-        // whole fleet on every pan re-randomised every position, so panning made all
-        // traffic jump at once — which read as the aircraft moving impossibly fast.
-        let keepMinLat = currentCenter.latitude - currentLatDelta * 0.5
-        let keepMaxLat = currentCenter.latitude + currentLatDelta * 0.5
-        let keepMinLon = currentCenter.longitude - currentLonDelta * 0.5
-        let keepMaxLon = currentCenter.longitude + currentLonDelta * 0.5
-        let survivors: [LiveFlight] = activeFlights.filter { (flight: LiveFlight) -> Bool in
-            flight.coordinate.latitude > keepMinLat && flight.coordinate.latitude < keepMaxLat &&
-            flight.coordinate.longitude > keepMinLon && flight.coordinate.longitude < keepMaxLon
-        }
-        let survivingIDs = Set(survivors.map(\.icao24))
-        let topUp = fleet.filter { !survivingIDs.contains($0.icao24) }
-        activeFlights = Array((survivors + topUp).prefix(max(fleet.count, survivors.count)))
-    }
-
     private func updateFlightPositions() {
         guard isActive else { return }
 
