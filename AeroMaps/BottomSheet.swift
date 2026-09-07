@@ -494,6 +494,15 @@ struct SecondaryToolsView: View {
                 HStack(spacing: 10) {
                     // Route-only tools are omitted rather than dimmed until there is
                     // a route for them to work on.
+                    // Airborne, the amendment tool is the one that matters, so it
+                    // leads — a runway assignment is not something to go hunting for
+                    // at the far end of a scrolling row with one hand on the yoke.
+                    if mapState.isNavigatingRoute {
+                        ActionButton(title: "Amend\nRoute", icon: "arrow.triangle.branch",
+                                     color: .orange, enabled: true) {
+                            mapState.activeTool = .amend
+                        }
+                    }
                     if hasRoute {
                         ActionButton(title: "Procedure\nAdvisor", icon: "arrow.triangle.merge",
                                      color: .purple, enabled: true) {
@@ -515,6 +524,10 @@ struct SecondaryToolsView: View {
                     ActionButton(title: "Weather\nBrief", icon: "cloud.sun.fill",
                                  color: .orange, enabled: true) {
                         mapState.showingWeatherPanel = true
+                    }
+                    ActionButton(title: "Logbook", icon: "book.closed",
+                                 color: .blue, enabled: true) {
+                        mapState.activeTool = .logbook
                     }
                     ActionButton(title: "Notes", icon: "pencil.and.list.clipboard",
                                  color: .gray, enabled: true) {

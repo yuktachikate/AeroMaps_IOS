@@ -34,6 +34,13 @@ vertical profile computed from that airframe's actual numbers.
   published runway headings, pattern altitudes, TOD distance and field frequencies.
 - **Aircraft profiles** — six built-in types plus your own, by tail number. Cruise
   speed, climb and descent rates, ceiling, burn and usable fuel all feed the plan.
+- **Amend in flight** — when ATC assigns a landing runway, pick it and the arrival is
+  re-planned onto a 5 NM final for that runway. Fuel is re-estimated from time
+  actually airborne, not from the pre-flight plan, and the change is written into the
+  flight record.
+- **Logbook** — each flight started records the plan as filed, the track actually
+  flown, how far it strayed from that plan, every change made in the air, and the
+  checklist as it stood. Stored as JSON on the device; nothing is uploaded.
 - **Live traffic**, airport diagrams, checklists, weight & balance, scratchpad.
 
 ## Data sources

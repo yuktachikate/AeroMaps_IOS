@@ -32,6 +32,9 @@
 		C5FD65D9B436A67BA35042F7 /* AeronauticalDataUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C54F07B3CECFD01A2AF394 /* AeronauticalDataUpdater.swift */; };
 		C6018A9A8850BFA3608F6E67 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D00E5DAB1D383FD896F62 /* ContentView.swift */; };
 		D146ABC9AA20DBE7B05990CC /* Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB7CB8EB8DFEDEF0470DAD99 /* Layout.swift */; };
+		A1B2C3D4E5F60011224404AA /* LogbookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011224404BB /* LogbookView.swift */; };
+		A1B2C3D4E5F60011224403AA /* InFlightAmendment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011224403BB /* InFlightAmendment.swift */; };
+		A1B2C3D4E5F60011224402AA /* FlightRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011224402BB /* FlightRecord.swift */; };
 		A1B2C3D4E5F60011224401AA /* WindsAloftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011224401BB /* WindsAloftService.swift */; };
 		A1B2C3D4E5F60011224400AA /* WindModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011224400BB /* WindModel.swift */; };
 		A1B2C3D4E5F60011223344AA /* UnifiedSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011223344BB /* UnifiedSearch.swift */; };
@@ -67,6 +70,9 @@
 		3FD007B5B46423ED8315057A /* aerodata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = aerodata.json; path = Resources/aerodata.json; sourceTree = "<group>"; };
 		471D00E5DAB1D383FD896F62 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		EB7CB8EB8DFEDEF0470DAD99 /* Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Layout.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60011224404BB /* LogbookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogbookView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60011224403BB /* InFlightAmendment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InFlightAmendment.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60011224402BB /* FlightRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightRecord.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60011224401BB /* WindsAloftService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindsAloftService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60011224400BB /* WindModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindModel.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60011223344BB /* UnifiedSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedSearch.swift; sourceTree = "<group>"; };
@@ -104,6 +110,9 @@
 				DB4484B5196BF79F13362354 /* BottomSheet.swift */,
 				471D00E5DAB1D383FD896F62 /* ContentView.swift */,
 				EB7CB8EB8DFEDEF0470DAD99 /* Layout.swift */,
+				A1B2C3D4E5F60011224404BB /* LogbookView.swift */,
+				A1B2C3D4E5F60011224403BB /* InFlightAmendment.swift */,
+				A1B2C3D4E5F60011224402BB /* FlightRecord.swift */,
 				A1B2C3D4E5F60011224401BB /* WindsAloftService.swift */,
 				A1B2C3D4E5F60011224400BB /* WindModel.swift */,
 				A1B2C3D4E5F60011223344BB /* UnifiedSearch.swift */,
@@ -244,6 +253,9 @@
 				2DEB635E70606F7444D2D66A /* BottomSheet.swift in Sources */,
 				C6018A9A8850BFA3608F6E67 /* ContentView.swift in Sources */,
 				D146ABC9AA20DBE7B05990CC /* Layout.swift in Sources */,
+				A1B2C3D4E5F60011224404AA /* LogbookView.swift in Sources */,
+				A1B2C3D4E5F60011224403AA /* InFlightAmendment.swift in Sources */,
+				A1B2C3D4E5F60011224402AA /* FlightRecord.swift in Sources */,
 				A1B2C3D4E5F60011224401AA /* WindsAloftService.swift in Sources */,
 				A1B2C3D4E5F60011224400AA /* WindModel.swift in Sources */,
 				A1B2C3D4E5F60011223344AA /* UnifiedSearch.swift in Sources */,

@@ -296,13 +296,21 @@ final class MapState: ObservableObject {
         pitch: 0,
         heading: 0
     )
-    @Published var searchText: String = ""
     @Published var route = RoutePlan() { didSet { routeDidChange(from: oldValue) } }
 
     // MARK: Vertical planning
     /// Terrain under the route. Optional everywhere — the planner degrades to
     /// field elevations when the elevation service is unreachable.
     let terrain = TerrainService()
+    /// Real winds aloft along the route. Every time and fuel figure depends on it.
+    let winds = WindsAloftService()
+    /// Every flight recorded on this device.
+    let flightLog = FlightLog()
+    /// The flight in progress, if any. Nil on the ground.
+    @Published var activeFlight: FlightRecord?
+    /// When the last track fix was stored, so fixes are thinned rather than logged
+    /// at the full rate of the GPS.
+    private var lastTrackFixAt: Date?
     @Published var altitudeProfile = AltitudeProfile()
     @Published var cruiseSuggestion: AltitudePlanner.CruiseSuggestion?
     /// Bumped whenever a waypoint is added, so the bottom sheet can open itself to
@@ -367,6 +375,7 @@ final class MapState: ObservableObject {
     enum ToolSheet: String, Identifiable {
         case flightPlanner, routeAdvisor, aircraft, procedure, profile
         case plates, checklist, notes, weather, promptTree
+        case logbook, amend
         var id: String { rawValue }
     }
 
@@ -570,6 +579,7 @@ final class MapState: ObservableObject {
         guard route.waypoints.count >= 2 else { return }
         isNavigatingRoute = true
         routeCompleted = false
+        beginFlightRecord()
         activeTab = 0 // Switch back to map view!
 
         // A fresh "Start" always begins from the departure waypoint so the
@@ -609,6 +619,7 @@ final class MapState: ObservableObject {
     }
     
     func cancelRouteNavigation() {
+        endFlightRecord()
         isNavigatingRoute = false
         routeCompleted = false
         currentWaypointIndex = 0
@@ -616,10 +627,109 @@ final class MapState: ObservableObject {
         closestRoutePoint = nil
     }
 
+    // MARK: - Flight recording
+
+    /// Snapshots the plan and opens a record. The snapshot matters: the live route
+    /// keeps being edited afterwards, and a log that changes retroactively is not a
+    /// log.
+    private func beginFlightRecord() {
+        let points = route.waypoints.map {
+            PlannedPoint($0, altitudeFT: altitudeProfile.waypointAltitudes[$0.id])
+        }
+        activeFlight = FlightRecord(
+            startedAt: Date(),
+            aircraftID: route.aircraftID,
+            aircraftName: route.aircraft.name,
+            plannedPoints: points,
+            plannedCruiseFT: route.altitudeFT,
+            plannedDistanceNM: altitudeProfile.totalDistanceNM,
+            plannedTimeMinutes: altitudeProfile.totalTimeMinutes,
+            plannedFuelGallons: altitudeProfile.totalFuelGallons,
+            fuelOnBoardAtStartGal: route.fuelOnBoardGal)
+        lastTrackFixAt = nil
+        if let activeFlight { flightLog.upsert(activeFlight) }
+    }
+
+    /// Closes the record and writes it. Called on both endings — finishing the
+    /// route and abandoning it — because a flight that was cut short is still a
+    /// flight that happened.
+    func endFlightRecord() {
+        guard var flight = activeFlight, flight.endedAt == nil else { return }
+        flight.endedAt = Date()
+        flight.checklistCompleted = Array(checkedChecklistItems)
+        flightLog.upsert(flight)
+        activeFlight = nil
+    }
+
+    /// Adds a fix to the flight's track.
+    ///
+    /// Thinned to one fix every few seconds: the GPS updates far faster than a
+    /// track needs, and an unthinned log of a three-hour flight is tens of
+    /// thousands of points to encode on every save.
+    func recordTrackFix(_ location: CLLocation) {
+        guard var flight = activeFlight, flight.endedAt == nil else { return }
+        let now = location.timestamp
+        if let last = lastTrackFixAt, now.timeIntervalSince(last) < 5 { return }
+        lastTrackFixAt = now
+        flight.track.append(TrackPoint(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            altitudeFT: location.altitude * 3.280839895,
+            groundSpeedKT: max(location.speed, 0) * 1.943844,
+            time: now))
+        activeFlight = flight
+    }
+
+    /// Records a change made after the flight started, with the fuel picture as it
+    /// stood at that moment.
+    func recordAmendment(_ kind: RouteAmendment.Kind, summary: String) {
+        guard var flight = activeFlight else { return }
+        let estimate = inFlightFuel
+        flight.amendments.append(RouteAmendment(
+            kind: kind, time: Date(), summary: summary,
+            remainingNM: remainingRouteNM,
+            remainingFuelGal: estimate?.remainingGal))
+        activeFlight = flight
+        flightLog.upsert(flight)
+    }
+
+    /// Distance still to fly, from the aircraft's position through the remaining
+    /// waypoints. Falls back to the whole route before the first fix arrives.
+    var remainingRouteNM: Double {
+        let remaining = Array(route.waypoints.suffix(from: min(currentWaypointIndex, max(route.waypoints.count - 1, 0))))
+        guard remaining.count >= 1 else { return 0 }
+        var total = 0.0
+        if let here = locationManager?.lastLocation?.coordinate, let next = remaining.first {
+            total += AltitudePlanner.distanceNM(here, next.coordinate)
+        }
+        if remaining.count >= 2 {
+            for i in 1..<remaining.count {
+                total += AltitudePlanner.distanceNM(remaining[i - 1].coordinate, remaining[i].coordinate)
+            }
+        }
+        return total
+    }
+
+    /// Fuel as it stands now, estimated from time airborne. Nil on the ground.
+    var inFlightFuel: FuelEstimator.Estimate? {
+        guard let flight = activeFlight else { return nil }
+        // Fuel for what is left, scaled from the profile's own burn rate per mile so
+        // it inherits the wind correction rather than reverting to a flat rate.
+        let perNM = altitudeProfile.totalDistanceNM > 0
+            ? altitudeProfile.totalFuelGallons / altitudeProfile.totalDistanceNM
+            : route.performance.fuelBurnGPH / max(route.performance.cruiseKTAS, 1)
+        return FuelEstimator.estimate(
+            elapsed: Date().timeIntervalSince(flight.startedAt),
+            startedWithGal: flight.fuelOnBoardAtStartGal,
+            burnGPH: route.performance.fuelBurnGPH,
+            remainingRouteFuelGal: remainingRouteNM * perNM)
+    }
+
     // Called when the pilot reaches the final waypoint. Keeps the finished
     // route on screen (drawn fully grey = "done") until they tap Finish.
     func completeRoute() {
         guard !routeCompleted else { return }
+        endFlightRecord()
         routeCompleted = true
         currentWaypointIndex = max(0, route.waypoints.count - 1)
         offRouteDistanceNM = 0.0

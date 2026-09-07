@@ -42,6 +42,8 @@ struct ContentView: View {
             // Advance turn-by-turn route progress on every GPS fix.
             locationManager.onLocationUpdate = { [weak mapState] loc in
                 mapState?.updateLiveNavigationProgress(userCoord: loc.coordinate)
+                // The track of the flight actually flown, for the logbook.
+                mapState?.recordTrackFix(loc)
             }
             // Aeronautical data refreshes quietly in the background when due. It is
             // never required: the bundled copy is always there, and a failed fetch
@@ -318,6 +320,8 @@ struct MapTabView: View {
             case .notes:         FlightNotesView(mapState: mapState)
             case .weather:       WeatherPanelView(mapState: mapState, weatherService: weatherService)
             case .promptTree:    PromptTreeVisualizerView()
+            case .logbook:       LogbookView(mapState: mapState)
+            case .amend:         InFlightAmendmentView(mapState: mapState)
             }
         }
         // Deliberately NOT a .alert. A UIAlertController presented over this view
