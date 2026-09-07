@@ -134,39 +134,45 @@ struct BottomSheet: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            // The grab area: the grabber and the search bar together. Treated as one
-            // surface so a swipe starting anywhere along the top of the sheet opens
-            // it, which is where a thumb naturally lands.
-            VStack(spacing: 10) {
-                Button(action: {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        isExpanded.toggle()
-                    }
-                }) {
-                    RoundedRectangle(cornerRadius: 2.5)
-                        .fill(Color.white.opacity(0.6))
-                        .frame(width: 40, height: 5)
-                        .padding(.top, 8)
-                        // Five points is a fine target to look at and a poor one to
-                        // hit; the tappable area is enlarged without moving anything.
-                        .contentShape(Rectangle().inset(by: -12))
+            // The grabber carries the swipe. The search bar deliberately does NOT.
+            //
+            // It used to: the two were wrapped together so a swipe anywhere along the
+            // top of the sheet would open it. That broke typing. Tapping the field
+            // focuses it, which expands the sheet, which animates the field upward
+            // under a finger that is still down — and that relative movement reads as
+            // a downward drag. The gesture ended, called hideKeyboard(), and the
+            // keyboard closed after a single character. "KSFO" got as far as "K".
+            //
+            // The grabber, the layer chips and the sheet's own background are still
+            // draggable, which is enough for the swipe to feel natural without
+            // putting a competing gesture on top of a text field.
+            Button(action: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
                 }
-
-                // 1. Search Bar (At top of bottom sheet, like Apple Maps)
-                SearchBar(
-                    text: $searchText,
-                    isExpanded: $isExpanded,
-                    placeholder: searchPlaceholder,
-                    onSearch: {
-                        // Enter takes the top hit. Typing an ident and pressing go is the
-                        // fastest path there is, and it should not require aiming at a row.
-                        if let first = search.suggestions.first { add(first) }
-                    }
-                )
-                .padding(.horizontal, 14)
+            }) {
+                RoundedRectangle(cornerRadius: 2.5)
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+                    // Five points is a fine target to look at and a poor one to hit;
+                    // the tappable area is enlarged without moving anything.
+                    .contentShape(Rectangle().inset(by: -14))
             }
-            .contentShape(Rectangle())
             .simultaneousGesture(sheetDrag)
+
+            // 1. Search Bar (At top of bottom sheet, like Apple Maps)
+            SearchBar(
+                text: $searchText,
+                isExpanded: $isExpanded,
+                placeholder: searchPlaceholder,
+                onSearch: {
+                    // Enter takes the top hit. Typing an ident and pressing go is the
+                    // fastest path there is, and it should not require aiming at a row.
+                    if let first = search.suggestions.first { add(first) }
+                }
+            )
+            .padding(.horizontal, 14)
             
             // Route status, from the first dropped point through to in-flight.
             if !mapState.route.waypoints.isEmpty {

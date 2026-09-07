@@ -79,7 +79,17 @@ struct ModeSelectorButton: View {
                 Button(action: {
                     mapState.activeTab = 3
                 }) {
-                    Label("Routes & Navigation", systemImage: "location.north.line.fill")
+                    Label("Saved Routes", systemImage: "location.north.line.fill")
+                }
+
+                // The flight log belongs next to saved routes, not only on a row
+                // inside the expanded sheet. "Where are my previous flights?" is
+                // asked of this menu, because this menu is where going somewhere
+                // else in the app happens.
+                Button(action: {
+                    mapState.activeTool = .logbook
+                }) {
+                    Label("Previous Flights", systemImage: "book.closed.fill")
                 }
             }
 
