@@ -90,6 +90,7 @@ struct InFlightAmendmentView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     fuelCard
                     runwayCard
+                    divertCard
                     if !mapState.route.waypoints.isEmpty { amendmentHistory }
                 }
                 .padding()
@@ -249,6 +250,121 @@ struct InFlightAmendmentView: View {
 
         mapState.recordAmendment(.runwayAssigned,
                                  summary: "Runway \(end.designation) at \(airport.icao) — 5 NM final inserted")
+        dismiss()
+    }
+
+    // MARK: Divert and fuel stops
+
+    /// Fields the aircraft can actually reach on the fuel it has left.
+    ///
+    /// Reachability is measured against the *current* estimate — what you started
+    /// with minus what you have burned — not the pre-flight figure, because the
+    /// whole point of diverting partway is that the original plan no longer applies.
+    /// A 30-minute reserve is held back before anything is called reachable.
+    private var reachableAirports: [(airport: Airport, distanceNM: Double, reachable: Bool)] {
+        guard let here = mapState.locationManager?.lastLocation?.coordinate else { return [] }
+        let estimate = mapState.inFlightFuel
+        let perf = mapState.route.performance
+        let usableGal = max((estimate?.remainingGal ?? mapState.route.fuelOnBoardGal) - (estimate?.reserveGal ?? 0), 0)
+        let rangeNM = perf.fuelBurnGPH > 0 ? (usableGal / perf.fuelBurnGPH) * perf.cruiseKTAS : 0
+
+        let current = Set(mapState.route.waypoints.compactMap(\.airportICAO))
+        return mapState.nearbyAirports(to: here, withinNM: 120, count: 40)
+            .filter { $0.isVerified && !current.contains($0.icao) }
+            .map { airport -> (Airport, Double, Bool) in
+                let d = AltitudePlanner.distanceNM(here, airport.coordinate)
+                return (airport, d, d <= rangeNM)
+            }
+            .sorted { $0.1 < $1.1 }
+            .prefix(6)
+            .map { (airport: $0.0, distanceNM: $0.1, reachable: $0.2) }
+    }
+
+    private var divertCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Divert or add a stop", systemImage: "arrow.triangle.branch")
+                .font(.headline)
+
+            if mapState.inFlightFuel?.isSufficient == false {
+                Label("The fuel estimate no longer covers the rest of the route. A stop here is not optional.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            let options = reachableAirports
+            if options.isEmpty {
+                Text("No airfields found nearby, or no position fix yet.")
+                    .font(.caption).foregroundColor(.secondary)
+            } else {
+                Text("Nearest fields, with reach measured on the fuel you have left.")
+                    .font(.caption).foregroundColor(.secondary)
+
+                ForEach(options, id: \.airport.icao) { option in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(option.airport.icao)
+                                    .font(.subheadline).fontWeight(.bold)
+                                if !option.reachable {
+                                    Text("beyond fuel range")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(.red)
+                                }
+                            }
+                            Text(String(format: "%@ · %.0f NM", option.airport.name, option.distanceNM))
+                                .font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        // Two different intentions: stop here and carry on, or make
+                        // this the new destination.
+                        Button("Stop") { addStop(option.airport) }
+                            .font(.caption).fontWeight(.semibold)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                        Button("Divert") { divert(to: option.airport) }
+                            .font(.caption).fontWeight(.semibold)
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(.vertical, 4)
+                    .opacity(option.reachable ? 1 : 0.55)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// Inserts a landing before the destination and keeps the rest of the route.
+    private func addStop(_ airport: Airport) {
+        var plan = mapState.route
+        var waypoint = Waypoint(airport: airport)
+        waypoint.stop = StopPlan(kind: .fuel, groundMinutes: 45,
+                                 refuelToGal: plan.aircraft.usableFuelGal)
+        waypoint.reason = "Added in flight"
+        // Ahead of the aircraft, not behind it: inserting before the leg already
+        // being flown would put a landing in the past.
+        let insertAt = min(max(mapState.currentWaypointIndex + 1, 1), plan.waypoints.count - 1)
+        plan.waypoints.insert(waypoint, at: insertAt)
+        mapState.route = plan
+        mapState.recordAmendment(.fuelStopAdded,
+                                 summary: "Fuel stop added at \(airport.icao) in flight")
+        dismiss()
+    }
+
+    /// Makes this field the destination and drops everything that came after the
+    /// aircraft's current position.
+    private func divert(to airport: Airport) {
+        var plan = mapState.route
+        let keep = min(mapState.currentWaypointIndex + 1, plan.waypoints.count)
+        let previousDestination = plan.waypoints.last?.ident ?? "destination"
+        plan.waypoints = Array(plan.waypoints.prefix(keep))
+        plan.waypoints.append(Waypoint(airport: airport).withReason("Diversion"))
+        mapState.route = plan
+        mapState.recordAmendment(.destinationChanged,
+                                 summary: "Diverted from \(previousDestination) to \(airport.icao)")
+        mapState.zoomToRoute()
         dismiss()
     }
 
