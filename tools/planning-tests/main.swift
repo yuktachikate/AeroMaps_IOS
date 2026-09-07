@@ -78,4 +78,37 @@ check("final fix is 5 NM out", near(d, 5, 0.1))
 let brg = AltitudePlanner.bearingDegrees(from: .init(latitude: 37.6188, longitude: -122.3750), to: fix)
 check("final fix sits on the reciprocal (100)", near(brg, 100, 1))
 
+print("\nFlight track vs plan")
+// A straight plan due east along 37N, and a track that detours north partway.
+let planA = CLLocationCoordinate2D(latitude: 37.0, longitude: -122.0)
+let planB = CLLocationCoordinate2D(latitude: 37.0, longitude: -120.0)
+func pp(_ id: String, _ c: CLLocationCoordinate2D) -> PlannedPoint {
+    PlannedPoint(Waypoint(ident: id, name: id, coordinate: c, kind: .airport), altitudeFT: 6500)
+}
+// 0.1 degree of latitude = 6 NM north of track at the midpoint.
+let detour: [TrackPoint] = [
+    (-122.0, 37.0), (-121.5, 37.0), (-121.2, 37.05), (-121.0, 37.10),
+    (-120.8, 37.05), (-120.5, 37.0), (-120.0, 37.0)
+].map { TrackPoint(latitude: $0.1, longitude: $0.0, altitudeFT: 6500, groundSpeedKT: 120, time: Date()) }
+
+var rec = FlightRecord(startedAt: Date(), aircraftID: "C172", aircraftName: "C172",
+                       plannedPoints: [pp("A", planA), pp("B", planB)],
+                       plannedCruiseFT: 6500, plannedDistanceNM: 96,
+                       plannedTimeMinutes: 48, plannedFuelGallons: 7,
+                       fuelOnBoardAtStartGal: 40)
+rec.track = detour
+let dev = rec.deviation
+print(String(format: "  max %.1f NM, mean %.1f NM", dev.max, dev.mean))
+check("detour peaks near 6 NM off plan", near(dev.max, 6.0, 0.6))
+check("mean is well under the peak", dev.mean < dev.max * 0.7)
+check("track distance exceeds the straight plan", rec.actualDistanceNM > 96)
+
+// A track that follows the plan exactly must read as no divergence.
+let onPlan: [TrackPoint] = [(-122.0, 37.0), (-121.0, 37.0), (-120.0, 37.0)]
+    .map { TrackPoint(latitude: $0.1, longitude: $0.0, altitudeFT: 6500, groundSpeedKT: 120, time: Date()) }
+var rec2 = rec; rec2.track = onPlan
+check("on-plan track shows ~0 deviation", rec2.deviation.max < 0.2)
+check("on-plan stays below the 2 NM divergence threshold", rec2.deviation.max < 2.0)
+check("detour crosses the 2 NM divergence threshold", dev.max >= 2.0)
+
 print("\n\(pass) passed, \(fail) failed")
